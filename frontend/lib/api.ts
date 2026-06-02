@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000/api";
+const BASE = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8000/api";
 
 async function request(url: string, options?: RequestInit) {
   const res = await fetch(url, options);
