@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r backend/requirements.txt"
+
+[deploy]
+startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+healthcheckPath = "/api/health"
+
+[service]
+port = 8000
