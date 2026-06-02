@@ -1,65 +1,82 @@
-import Image from "next/image";
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createTask } from "@/lib/api";
 
-export default function Home() {
+const PLATFORMS = [
+  { key: "tiktok", label: "TikTok" },
+  { key: "amazon", label: "Amazon" },
+  { key: "youtube", label: "YouTube Shorts" },
+  { key: "instagram", label: "Instagram Reels" },
+];
+
+export default function HomePage() {
+  const [url, setUrl] = useState("");
+  const [platforms, setPlatforms] = useState(["tiktok", "amazon", "youtube", "instagram"]);
+  const [image, setImage] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const togglePlatform = (key: string) => {
+    setPlatforms((prev) =>
+      prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (!url) return;
+    setLoading(true);
+    const { task_id } = await createTask(url, platforms, image || undefined);
+    router.push(`/task/${task_id}`);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center p-8">
+      <div className="w-full max-w-xl space-y-6">
+        <h1 className="text-3xl font-bold text-center">TVS Video Tool</h1>
+        <p className="text-zinc-400 text-center">粘贴产品链接，生成多平台带货视频</p>
+
+        <input
+          className="w-full p-4 rounded-xl bg-zinc-900 border border-zinc-700 text-white placeholder-zinc-500"
+          placeholder="产品链接 (Amazon / Shopify / ...)"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+
+        <div className="flex flex-wrap gap-2">
+          {PLATFORMS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => togglePlatform(p.key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                platforms.includes(p.key)
+                  ? "bg-blue-600 text-white"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+              }`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {p.label}
+            </button>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+          <label className="text-sm text-zinc-400">产品参考图（可选，不传则 AI 自动生成）</label>
+          <input
+            type="file"
+            accept="image/*"
+            className="mt-2 text-sm text-zinc-300"
+            onChange={(e) => setImage(e.target.files?.[0] || null)}
+          />
         </div>
-      </main>
-    </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading || !url}
+          className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold text-lg transition"
+        >
+          {loading ? "创建中..." : "开始生成视频"}
+        </button>
+      </div>
+    </main>
   );
 }

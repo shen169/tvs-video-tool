@@ -16,3 +16,8 @@ store = InMemoryTaskStore()
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+from .routes import router, init_routes
+init_routes(store)
+app.include_router(router)
