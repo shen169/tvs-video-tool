@@ -7,6 +7,7 @@ class TaskStage(str, Enum):
     PENDING = "pending"
     FETCHING = "fetching"
     REF_IMAGE = "ref_image"
+    CREATIVE_WAIT = "creative_wait"
     STYLE_WAIT = "style_wait"
     SCRIPT_GEN = "script_gen"
     PREVIEW_WAIT = "preview_wait"
@@ -37,6 +38,8 @@ class ShotItem(BaseModel):
     angle: str
     lighting: str
     camera_move: str
+    purpose: str
+    transition: str
     scene: str
     voiceover: str
     subtitle: str
@@ -51,6 +54,8 @@ class TaskState(BaseModel):
     ref_image_url: Optional[str] = None
     uploaded_ref_image: Optional[str] = None
     style_options: Optional[list[dict]] = None
+    creative_directions: Optional[list[dict]] = None
+    creative_direction: Optional[dict] = None
     selected_style: Optional[StyleChoice] = None
     scripts: Optional[dict[str, list[ShotItem]]] = None
     preview_images: Optional[dict[str, list[str]]] = None

@@ -31,8 +31,13 @@ async def run_pipeline(task_id: str, store: InMemoryTaskStore):
 
         logger.info(f"[{task_id}] Stage 3: Generating style options")
         style_options = await generate_style_options(product_info)
-        store.update(task_id, style_options=style_options, stage=TaskStage.STYLE_WAIT)
-        logger.info(f"[{task_id}] Pipeline waiting for style selection")
+        store.update(task_id, style_options=style_options)
+
+        logger.info(f"[{task_id}] Stage 2.5: Generating creative directions")
+        from .stage2_creative import generate_creative_directions
+        creative_directions = await generate_creative_directions(product_info)
+        store.update(task_id, creative_directions=creative_directions, stage=TaskStage.CREATIVE_WAIT)
+        logger.info(f"[{task_id}] Pipeline waiting for creative direction selection")
 
     except Exception as e:
         logger.error(f"[{task_id}] Pipeline error: {e}")
@@ -50,7 +55,11 @@ async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
         store.update(task_id, stage=TaskStage.SCRIPT_GEN)
         platforms = [p.value for p in task.platforms]
         from .stage4_script import generate_all_scripts
-        scripts = await generate_all_scripts(task.product_info, platforms, task.selected_style.model_dump())
+        scripts = await generate_all_scripts(
+            task.product_info, platforms,
+            task.selected_style.model_dump(),
+            task.creative_direction  # 传入创意方向
+        )
         store.update(task_id, scripts=scripts, stage=TaskStage.PREVIEW_WAIT)
         logger.info(f"[{task_id}] Stage 4 complete, waiting for storyboard confirmation")
     except Exception as e:

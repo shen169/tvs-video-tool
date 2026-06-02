@@ -46,6 +46,16 @@ async def get_task(task_id: str):
     return task.model_dump()
 
 
+@router.post("/tasks/{task_id}/creative")
+async def select_creative(task_id: str, creative_data: dict):
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    store.update(task_id, creative_direction=creative_data, stage=TaskStage.STYLE_WAIT)
+    # 继续到风格选择阶段，不自动推进（等待风格选择）
+    return {"task_id": task_id, "stage": TaskStage.STYLE_WAIT.value}
+
+
 @router.post("/tasks/{task_id}/style")
 async def select_style(task_id: str, style_data: dict):
     task = store.get(task_id)
