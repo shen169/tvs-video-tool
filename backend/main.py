@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .task_manager import InMemoryTaskStore
+from .task_manager import FileTaskStore
 
 app = FastAPI(title="TVS Video Tool API")
 app.add_middleware(
@@ -10,7 +10,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-store = InMemoryTaskStore()
+store = FileTaskStore()
 
 
 @app.get("/api/health")

@@ -6,6 +6,48 @@ PLATFORM_CONFIG = {
 }
 
 
+def build_continuity_anchors(style: dict, creative: dict = None, product_info: dict = None) -> str:
+    """构建全局视觉锚点，确保所有分镜画面一致。"""
+    anchors = [
+        "同一产品外观在所有镜头中保持一致",
+        "统一的电影级调色",
+        "统一的光影风格",
+    ]
+
+    # 从风格提取
+    vs = style.get("visual_style", "")
+    if vs == "clean_minimal":
+        anchors.append("极简干净的视觉语言，无多余元素")
+    elif vs == "lifestyle_warm":
+        anchors.append("温暖的室内自然光，生活感场景")
+    elif vs == "tech_futuristic":
+        anchors.append("深色调科技感，蓝色/紫色氛围光")
+
+    # Light arc
+    light_arc = style.get("light_arc", "")
+    if not light_arc:
+        cam = style.get("camera", "")
+        light = style.get("lighting", "")
+        light_arc = f"opening_bright_to_{light}_climax"
+
+    anchors.append(f"光影弧线: {light_arc}")
+
+    # 从创意提取
+    if creative:
+        if creative.get("visual_metaphor"):
+            anchors.append(f"视觉隐喻: {creative['visual_metaphor']}")
+        if creative.get("brand_tone"):
+            anchors.append(f"品牌调性: {creative['brand_tone']}")
+
+    # 从产品提取
+    if product_info:
+        title = product_info.get("title", "")
+        if title:
+            anchors.append(f"产品 {title[:40]} 外观一致")
+
+    return "；".join(anchors)
+
+
 async def generate_script(product_info: dict, platform: str, style: dict, creative: dict = None) -> list[dict]:
     cfg = PLATFORM_CONFIG.get(platform, PLATFORM_CONFIG["tiktok"])
     title = product_info.get("title", "this product")
@@ -16,7 +58,7 @@ async def generate_script(product_info: dict, platform: str, style: dict, creati
     creative_label = creative.get("title", "") if creative else ""
     big_idea = creative.get("big_idea", "") if creative else ""
 
-    return [
+    shots = [
         {
             "number": 1, "duration": shot_dur, "shot_type": "wide",
             "angle": style.get("angle", "eye_level"),
@@ -73,6 +115,13 @@ async def generate_script(product_info: dict, platform: str, style: dict, creati
             "subtitle": "立即购买 ↓",
         },
     ]
+
+    # 注入 continuity_anchor 到每个分镜
+    continuity = build_continuity_anchors(style, creative, product_info)
+    for shot in shots:
+        shot["continuity_anchor"] = continuity
+
+    return shots
 
 
 async def generate_all_scripts(product_info: dict, platforms: list[str], style: dict, creative: dict = None) -> dict[str, list[dict]]:
