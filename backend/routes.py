@@ -53,8 +53,22 @@ async def select_style(task_id: str, style_data: dict):
         raise HTTPException(status_code=404, detail="task not found")
     from .pipeline.runner import continue_pipeline
     from .models import StyleChoice
-    style = StyleChoice(**{k: v for k, v in style_data.items() if k in StyleChoice.model_fields})
+    try:
+        style = StyleChoice(**style_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid style data: requires visual_style, camera, lighting, angle, human")
     store.update(task_id, selected_style=style, stage=TaskStage.SCRIPT_GEN)
-    _asyncio = __import__('asyncio')
+    import asyncio as _asyncio
     _asyncio.create_task(continue_pipeline(task_id, store))
     return {"task_id": task_id, "stage": TaskStage.SCRIPT_GEN.value}
+
+
+@router.post("/tasks/{task_id}/storyboard")
+async def confirm_storyboard(task_id: str, data: dict):
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    from .pipeline.runner import run_stage5_and_6
+    import asyncio as _asyncio
+    _asyncio.create_task(run_stage5_and_6(task_id, store))
+    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value}
