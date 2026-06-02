@@ -23,11 +23,19 @@ export default function HomePage() {
     );
   };
 
+  const [error, setError] = useState("");
+
   const handleSubmit = async () => {
     if (!url) return;
     setLoading(true);
-    const { task_id } = await createTask(url, platforms, image || undefined);
-    router.push(`/task/${task_id}`);
+    setError("");
+    try {
+      const { task_id } = await createTask(url, platforms, image || undefined);
+      router.push(`/task/${task_id}`);
+    } catch (e: any) {
+      setError(e.message || "创建任务失败");
+      setLoading(false);
+    }
   };
 
   return (
@@ -68,6 +76,10 @@ export default function HomePage() {
             onChange={(e) => setImage(e.target.files?.[0] || null)}
           />
         </div>
+
+        {error && (
+          <div className="p-3 rounded-lg bg-red-900/50 border border-red-700 text-red-300 text-sm">{error}</div>
+        )}
 
         <button
           onClick={handleSubmit}
