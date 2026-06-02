@@ -1,6 +1,7 @@
 const STAGES = [
   { key: "fetching", label: "产品分析", icon: "🔍" },
   { key: "ref_image", label: "参考图", icon: "📸" },
+  { key: "creative_wait", label: "创意方向", icon: "💡" },
   { key: "style_wait", label: "选择风格", icon: "🎨" },
   { key: "script_gen", label: "脚本分镜", icon: "📝" },
   { key: "preview_wait", label: "分镜预览", icon: "🖼️" },

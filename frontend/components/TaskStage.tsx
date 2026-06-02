@@ -1,17 +1,10 @@
 import ProductAnalysis from "./ProductAnalysis";
+import CreativePicker from "./CreativePicker";
 import StylePicker from "./StylePicker";
 import StoryboardGallery from "./StoryboardGallery";
 import VideoResult from "./VideoResult";
 
-export default function TaskStage({
-  task,
-  onSelectStyle,
-  onConfirmStoryboard,
-}: {
-  task: any;
-  onSelectStyle: (s: any) => void;
-  onConfirmStoryboard: () => void;
-}) {
+export default function TaskStage({ task, onSelectStyle, onSelectCreative, onConfirmStoryboard }: { task: any; onSelectStyle: (s: any) => void; onSelectCreative: (d: any) => void; onConfirmStoryboard: () => void }) {
   const {
     stage,
     product_info,
@@ -44,6 +37,10 @@ export default function TaskStage({
           </div>
         </div>
       );
+    case "creative_wait":
+      return task.creative_directions ? (
+        <CreativePicker directions={task.creative_directions} onSelect={onSelectCreative} />
+      ) : <div className="text-zinc-400 animate-pulse">正在生成创意方向...</div>;
     case "style_wait":
       return style_options ? (
         <StylePicker options={style_options} onSelect={onSelectStyle} />

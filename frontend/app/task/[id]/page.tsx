@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, confirmStoryboard } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -14,7 +14,7 @@ export default function TaskPage() {
     const data = await getTask(taskId);
     setTask(data);
     if (data.stage === "done" || data.stage === "failed") return;
-    if (!["style_wait", "preview_wait"].includes(data.stage)) {
+    if (!["style_wait", "creative_wait", "preview_wait"].includes(data.stage)) {
       setTimeout(() => poll(), 2000);
     }
   }, [taskId]);
@@ -26,6 +26,12 @@ export default function TaskPage() {
   const handleSelectStyle = async (style: Record<string, any>) => {
     await submitStyle(taskId, style);
     setTask((prev: any) => ({ ...prev, stage: "script_gen" }));
+    setTimeout(() => poll(), 1000);
+  };
+
+  const handleSelectCreative = async (creative: Record<string, any>) => {
+    await submitCreative(taskId, creative);
+    setTask((prev: any) => ({ ...prev, stage: "style_wait" }));
     setTimeout(() => poll(), 1000);
   };
 
@@ -49,6 +55,7 @@ export default function TaskPage() {
         <TaskStage
           task={task}
           onSelectStyle={handleSelectStyle}
+          onSelectCreative={handleSelectCreative}
           onConfirmStoryboard={handleConfirmStoryboard}
         />
       </div>

@@ -42,6 +42,14 @@ export async function submitStyle(taskId: string, style: Record<string, string>)
   });
 }
 
+export async function submitCreative(taskId: string, creative: Record<string, any>) {
+  return request(`${BASE}/tasks/${taskId}/creative`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(creative),
+  });
+}
+
 export async function confirmStoryboard(taskId: string) {
   return request(`${BASE}/tasks/${taskId}/storyboard`, {
     method: "POST",
