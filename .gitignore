@@ -7,3 +7,4 @@ output/
 backend/output/
 venv/
 .claude/worktrees/
+.DS_Store

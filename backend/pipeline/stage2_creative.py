@@ -1,3 +1,11 @@
+"""
+Stage 2.5 — 创意方向提案。
+
+基于 Stage 1 的 AI 产品分析生成 3 个创意方向。
+AI 模式：利用 target_audience / pain_points / use_scenarios / video_hook_angles
+Fallback 模式：基于品类关键词的启发式规则。
+"""
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -9,8 +17,9 @@ CREATIVE_NARRATIVE_MODELS = [
 WORLD_TYPES = ["product_world", "brand_world", "dual_world"]
 PRODUCT_INTEGRATION_MODES = ["cinematic_breakdown", "brand_crosscut", "lifestyle_film"]
 
-async def generate_creative_directions(product_info: dict) -> list[dict]:
-    """基于产品分析生成 3 个创意方向提案。"""
+
+def _fallback_directions(product_info: dict) -> list[dict]:
+    """无 AI 分析时的启发式创意方向（与原逻辑兼容）。"""
     title = product_info.get("title", "this product")
     desc = product_info.get("description", "amazing features")[:200]
     category = str(product_info.get("category_hints", []))
@@ -19,7 +28,7 @@ async def generate_creative_directions(product_info: dict) -> list[dict]:
     is_beauty = any(kw in category.lower() for kw in ["beauty", "skincare", "美妆"])
     is_home = any(kw in category.lower() for kw in ["home", "kitchen", "garden", "家具", "厨房"])
 
-    directions = [
+    return [
         {
             "id": "a",
             "title": "功能演示型" if is_tech else "问题解决型",
@@ -70,5 +79,90 @@ async def generate_creative_directions(product_info: dict) -> list[dict]:
         }
     ]
 
-    logger.info(f"Generated {len(directions)} creative directions for {title}")
+
+def _ai_directions(product_info: dict) -> list[dict]:
+    """基于 AI 产品分析生成 3 个针对性创意方向。"""
+    title = product_info.get("title", "this product")
+    pain_points = product_info.get("pain_points", [])
+    scenarios = product_info.get("use_scenarios", [])
+    hooks = product_info.get("video_hook_angles", [])
+    audience = product_info.get("target_audience", [])
+    usps = product_info.get("unique_selling_points", [])
+
+    # 用真实数据填充，没有则用 title 兜底
+    hook1 = hooks[0] if hooks else f"What if you could fix {title.lower()} in seconds?"
+    hook2 = hooks[1] if len(hooks) > 1 else f"Stop settling. Start {title.lower()}."
+    hook3 = hooks[2] if len(hooks) > 2 else f"The {title.lower()} everyone's talking about."
+
+    pain1 = pain_points[0] if pain_points else "your daily frustration"
+    pain2 = pain_points[1] if len(pain_points) > 1 else pain1
+    scene1 = scenarios[0] if scenarios else "your daily life"
+    scene2 = scenarios[1] if len(scenarios) > 1 else scene1
+    aud1 = audience[0] if audience else "smart shoppers"
+    usp1 = usps[0] if usps else title
+
+    return [
+        {
+            "id": "a",
+            "title": "痛点直击型",
+            "concept": f"从 {pain1} 出发，展示 {title} 如何成为解决方案",
+            "big_idea": f"让观众在看到产品的瞬间就想喊'这就是我需要的！'",
+            "reason_to_watch": f"如果你也曾因为{pain1}而烦恼，这 {len(hooks) * 2 + 5} 秒会让你看到希望",
+            "hook_moment": hook1,
+            "visual_metaphor": f"问题状态（灰暗/束缚/不适）→ {title} 介入 → 解决状态（明亮/自由/舒适）",
+            "world_type": "product_world",
+            "product_integration_mode": "cinematic_breakdown",
+            "narrative_model": "problem_solution",
+            "brand_tone": "直接、可信、解决问题",
+            "ai_feasibility": "high — 前后对比结构清晰，AI 生图友好",
+            "risk": "痛点展示不宜过于夸张，否则显得不真实",
+            "description": f"直接瞄准{pain1}这个核心痛点。前3秒用{hook1}抓住观众，然后展示{title}如何成为{aud1}的救星。{usp1}。"
+        },
+        {
+            "id": "b",
+            "title": "场景向往型",
+            "concept": f"在 {scene1} 中自然融入 {title}",
+            "big_idea": "观众买的是产品带来的理想状态",
+            "reason_to_watch": f"想看看{aud1}如何用{title}改变{scene1}的体验",
+            "hook_moment": hook2,
+            "visual_metaphor": f"理想生活场景的视觉化 → {title}作为场景中的自然元素 → 向往感=购买欲",
+            "world_type": "dual_world",
+            "product_integration_mode": "lifestyle_film",
+            "narrative_model": "lifestyle_aspiration",
+            "brand_tone": "温暖、向往、高品质",
+            "ai_feasibility": "medium — 生活场景需注意人物一致性",
+            "risk": "场景感过强可能冲淡产品焦点",
+            "description": f"不直接叫卖，而是展示{aud1}在{scene1}中使用{title}的理想画面。观众买的不是产品，是{title}带来的那种生活状态。"
+        },
+        {
+            "id": "c",
+            "title": "信任构建型",
+            "concept": f"展示为什么 {title} 值得信赖——从设计到体验",
+            "big_idea": "细节透露品质，品质建立信任，信任驱动下单",
+            "reason_to_watch": f"真正的好产品禁得起近距离审视",
+            "hook_moment": hook3,
+            "visual_metaphor": f"微距镜头 → 材质/工艺特写 → 使用中的流畅体验 → '原来如此'的认知时刻",
+            "world_type": "product_world",
+            "product_integration_mode": "cinematic_breakdown",
+            "narrative_model": "mechanism_reveal",
+            "brand_tone": "高级、克制、专业",
+            "ai_feasibility": "high — 产品特写+微距为主，AI 生图友好",
+            "risk": "过于技术化可能让非专业用户感到疏远",
+            "description": f"用电影级的视觉语言解构{title}。每一个镜头都在回答'为什么选它'。从{usp1}的设计美学到{scene2}中的实际表现，让产品自己说话。"
+        }
+    ]
+
+
+async def generate_creative_directions(product_info: dict) -> list[dict]:
+    """基于产品分析生成 3 个创意方向提案。AI 数据可用时用 AI 模式，否则 fallback。"""
+    title = product_info.get("title", "this product")
+
+    if product_info.get("ai_analyzed") and product_info.get("pain_points"):
+        directions = _ai_directions(product_info)
+        mode = "AI"
+    else:
+        directions = _fallback_directions(product_info)
+        mode = "fallback"
+
+    logger.info(f"Generated {len(directions)} creative directions for {title} ({mode} mode)")
     return directions
