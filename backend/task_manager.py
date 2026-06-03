@@ -12,6 +12,8 @@ class TaskStore(ABC):
     def get(self, task_id: str) -> TaskState | None: ...
     @abstractmethod
     def update(self, task_id: str, **kwargs) -> TaskState: ...
+    @abstractmethod
+    def list_all(self) -> list[TaskState]: ...
 
 
 class InMemoryTaskStore(TaskStore):
@@ -31,6 +33,9 @@ class InMemoryTaskStore(TaskStore):
         for k, v in kwargs.items():
             setattr(task, k, v)
         return task
+
+    def list_all(self) -> list[TaskState]:
+        return list(self._tasks.values())
 
 
 class FileTaskStore(InMemoryTaskStore):

@@ -4,72 +4,79 @@ import StylePicker from "./StylePicker";
 import StoryboardGallery from "./StoryboardGallery";
 import VideoResult from "./VideoResult";
 
-export default function TaskStage({ task, onSelectStyle, onSelectCreative, onConfirmStoryboard }: { task: any; onSelectStyle: (s: any) => void; onSelectCreative: (d: any) => void; onConfirmStoryboard: () => void }) {
-  const {
-    stage,
-    product_info,
-    style_options,
-    scripts,
-    preview_images,
-    video_urls,
-    ref_image_url,
-    uploaded_ref_image,
-    error,
-  } = task;
+export default function TaskStage({ task, onSelectCreative, onSelectStyle, onConfirmStoryboard }: {
+  task: any;
+  onSelectCreative: (d: any) => void;
+  onSelectStyle: (s: any) => void;
+  onConfirmStoryboard: () => void;
+}) {
+  const { stage, product_info, ref_image_url, uploaded_ref_image, creative_directions, style_options, scripts, preview_images, video_urls, error } = task;
 
   switch (stage) {
-    case "pending":
-    case "fetching":
-      return <ProductAnalysis info={null} />;
+    case "pending": case "fetching":
+      return <StageCard><div className="shimmer h-48 rounded-lg" /></StageCard>;
+
     case "ref_image":
       return (
-        <div className="space-y-4">
-          <ProductAnalysis info={product_info} />
-          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h4 className="text-sm font-bold mb-2">产品参考图</h4>
-            {uploaded_ref_image ? (
-              <div className="text-green-400 text-sm">✅ 使用你上传的产品图</div>
-            ) : ref_image_url?.startsWith?.("__AI_GEN__:") ? (
-              <div className="text-blue-400 text-sm">🤖 AI 正在生成白底商品图...</div>
-            ) : (
-              <div className="text-zinc-500 animate-pulse">等待参考图...</div>
-            )}
-          </div>
+        <div className="space-y-6">
+          <StageCard><ProductAnalysis info={product_info} /></StageCard>
+          <StageCard label="产品参考图">
+            {uploaded_ref_image
+              ? <p className="text-sm text-emerald-400">✓ 使用上传的产品图</p>
+              : <p className="text-sm text-zinc-500">正在 AI 生成白底商品图...</p>}
+          </StageCard>
         </div>
       );
+
     case "creative_wait":
-      return task.creative_directions ? (
-        <CreativePicker directions={task.creative_directions} onSelect={onSelectCreative} />
-      ) : <div className="text-zinc-400 animate-pulse">正在生成创意方向...</div>;
+      return creative_directions
+        ? <CreativePicker directions={creative_directions} onSelect={onSelectCreative} />
+        : <StageCard><div className="shimmer h-32 rounded-lg" /></StageCard>;
+
     case "style_wait":
-      return style_options ? (
-        <StylePicker options={style_options} onSelect={onSelectStyle} />
-      ) : (
-        <div className="text-zinc-400 animate-pulse">正在生成风格选项...</div>
-      );
+      return style_options
+        ? <StylePicker options={style_options} onSelect={onSelectStyle} />
+        : <StageCard><div className="shimmer h-32 rounded-lg" /></StageCard>;
+
     case "script_gen":
-      return <div className="text-zinc-400 animate-pulse">正在生成脚本和分镜...</div>;
+      return <StageCard><p className="text-sm text-zinc-500">正在生成脚本和分镜...</p><div className="shimmer h-4 w-2/3 mt-3 rounded" /></StageCard>;
+
     case "preview_wait":
-      return scripts ? (
-        <StoryboardGallery scripts={scripts} platform="tiktok" onConfirm={onConfirmStoryboard} />
-      ) : (
-        <div className="text-zinc-400 animate-pulse">正在生成分镜预览...</div>
-      );
+      return scripts
+        ? <StoryboardGallery scripts={scripts} platform="tiktok" onConfirm={onConfirmStoryboard} />
+        : <StageCard><p className="text-sm text-zinc-500">加载分镜预览...</p></StageCard>;
+
     case "video_gen":
       return (
-        <div className="text-zinc-400 animate-pulse">
-          🎬 Seedance 正在生成视频，预计 2-5 分钟...
-        </div>
+        <StageCard>
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-emerald-600/10 flex items-center justify-center">
+              <div className="w-5 h-5 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Seedance 正在生成视频</p>
+              <p className="text-xs text-zinc-500 mt-0.5">预计 2-5 分钟，请稍候...</p>
+            </div>
+          </div>
+        </StageCard>
       );
+
     case "done":
-      return video_urls ? (
-        <VideoResult videos={video_urls} />
-      ) : (
-        <div className="text-zinc-400">完成</div>
-      );
+      return video_urls ? <VideoResult videos={video_urls} /> : <StageCard><p className="text-sm text-zinc-500">完成</p></StageCard>;
+
     case "failed":
-      return <div className="text-red-400">❌ 任务失败：{error}</div>;
+      return <StageCard><p className="text-sm text-red-400">✕ 任务失败</p><p className="text-xs text-red-500/60 mt-1">{error}</p></StageCard>;
+
     default:
-      return <div className="text-zinc-400 animate-pulse">正在初始化...</div>;
+      return <StageCard><p className="text-sm text-zinc-500">初始化中...</p></StageCard>;
   }
+}
+
+function StageCard({ children, label }: { children: React.ReactNode; label?: string }) {
+  return (
+    <div className="rounded-xl bg-[#131316] border border-[#1f1f24] p-5">
+      {label && <h4 className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-3">{label}</h4>}
+      {children}
+    </div>
+  );
 }

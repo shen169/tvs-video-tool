@@ -1,5 +1,9 @@
 const BASE = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8000/api";
 
+export async function listTasks() {
+  return request(`${BASE}/tasks`);
+}
+
 async function request(url: string, options?: RequestInit) {
   const res = await fetch(url, options);
   if (!res.ok) {

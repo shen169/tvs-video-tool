@@ -73,6 +73,14 @@ async def select_style(task_id: str, style_data: dict):
     return {"task_id": task_id, "stage": TaskStage.SCRIPT_GEN.value}
 
 
+@router.get("/tasks")
+async def list_tasks():
+    """列出最近的任务（用于历史记录页）"""
+    tasks = store.list_all()
+    tasks.sort(key=lambda t: t.task_id, reverse=True)
+    return [{"task_id": t.task_id, "stage": t.stage.value, "product_info": t.product_info} for t in tasks[:50]]
+
+
 @router.post("/tasks/{task_id}/storyboard")
 async def confirm_storyboard(task_id: str, data: dict):
     task = store.get(task_id)
