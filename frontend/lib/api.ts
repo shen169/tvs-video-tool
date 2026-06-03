@@ -1,4 +1,5 @@
-const BASE = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) || "http://localhost:8000/api";
+// 通过 Next.js rewrites 代理到后端，规避跨域和环境变量问题
+const BASE = "/api/backend";
 
 export async function listTasks() {
   return request(`${BASE}/tasks`);
