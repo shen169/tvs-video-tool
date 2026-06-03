@@ -1,5 +1,5 @@
 export default function CreativePicker({ directions, onSelect }: { directions: Record<string, any>[]; onSelect: (d: any) => void }) {
-  const riskColors: Record<string, string> = { high: "text-emerald-400", medium: "text-amber-400", low: "text-red-400" };
+  const feasibilityColors: Record<string, string> = { high: "text-emerald-400", medium: "text-amber-400", low: "text-red-400" };
 
   return (
     <div>
@@ -23,7 +23,7 @@ export default function CreativePicker({ directions, onSelect }: { directions: R
               <span className="text-[10px] text-zinc-600">{d.world_type?.replace("_", " ")}</span>
               <span className="text-[10px] text-zinc-600">{d.product_integration_mode?.replace("_", " ")}</span>
               <span className="text-[10px] text-zinc-600">{d.brand_tone}</span>
-              <span className={`text-[10px] ${riskColors[d.ai_feasibility?.split(" ")[0]] || "text-zinc-500"}`}>🤖 {d.ai_feasibility}</span>
+              <span className={`text-[10px] ${feasibilityColors[d.ai_feasibility?.split(" ")[0]] || "text-zinc-500"}`}>🤖 {d.ai_feasibility}</span>
             </div>
             <p className="text-[10px] text-zinc-600 mt-2 italic">⚠ {d.risk}</p>
           </button>

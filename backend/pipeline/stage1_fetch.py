@@ -25,7 +25,8 @@ async def fetch_product_info(url: str) -> dict:
         desc = desc_match.group(1)
 
     price = ""
-    price_match = re.search(r'\$\d+\.?\d*', html)
+    # 支持 $29.99, $1,299.99, $1299.99 等格式
+    price_match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?', html)
     if price_match:
         price = price_match.group(0)
 

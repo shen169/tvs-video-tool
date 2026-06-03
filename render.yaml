@@ -2,10 +2,10 @@ services:
   - type: web
     name: tvs-video-frontend
     env: node
-    buildCommand: cd frontend && npm install && NEXT_PUBLIC_API_URL=https://tvs-video-backend.onrender.com/api npm run build
+    buildCommand: cd frontend && npm install && NEXT_PUBLIC_API_URL=https://tvs-video-backend.onrender.com npm run build
     startCommand: cd frontend && npx next start
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        value: https://tvs-video-backend.onrender.com/api
+        value: https://tvs-video-backend.onrender.com
       - key: ACCESS_PASSWORD
         value: tvs2024

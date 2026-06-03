@@ -51,6 +51,8 @@ async def select_creative(task_id: str, creative_data: dict):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.CREATIVE_WAIT:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'creative_wait'")
     store.update(task_id, creative_direction=creative_data, stage=TaskStage.STYLE_WAIT)
     # 继续到风格选择阶段，不自动推进（等待风格选择）
     return {"task_id": task_id, "stage": TaskStage.STYLE_WAIT.value}
@@ -61,6 +63,8 @@ async def select_style(task_id: str, style_data: dict):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.STYLE_WAIT:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'style_wait'")
     from .pipeline.runner import continue_pipeline
     from .models import StyleChoice
     try:
@@ -86,6 +90,8 @@ async def confirm_storyboard(task_id: str, data: dict):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.PREVIEW_WAIT:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'preview_wait'")
     from .pipeline.runner import run_stage5_and_6
     import asyncio as _asyncio
     _asyncio.create_task(run_stage5_and_6(task_id, store))

@@ -16,8 +16,10 @@ export default function TaskPage() {
       const data = await getTask(taskId);
       setTask(data);
       if (data.stage === "done" || data.stage === "failed") return;
+      // 需要用户交互的阶段暂停轮询，video_gen 持续轮询直到完成
       if (!["style_wait", "creative_wait", "preview_wait"].includes(data.stage)) {
-        setTimeout(() => poll(), 2000);
+        const interval = data.stage === "video_gen" ? 5000 : 2000;
+        setTimeout(() => poll(), interval);
       }
     } catch (e: any) { setError(e.message); }
   }, [taskId]);

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ProductAnalysis from "./ProductAnalysis";
 import CreativePicker from "./CreativePicker";
 import StylePicker from "./StylePicker";
@@ -11,6 +12,7 @@ export default function TaskStage({ task, onSelectCreative, onSelectStyle, onCon
   onConfirmStoryboard: () => void;
 }) {
   const { stage, product_info, ref_image_url, uploaded_ref_image, creative_directions, style_options, scripts, preview_images, video_urls, error } = task;
+  const [storyboardTab, setStoryboardTab] = useState(0);
 
   switch (stage) {
     case "pending": case "fetching":
@@ -42,9 +44,29 @@ export default function TaskStage({ task, onSelectCreative, onSelectStyle, onCon
       return <StageCard><p className="text-sm text-zinc-500">正在生成脚本和分镜...</p><div className="shimmer h-4 w-2/3 mt-3 rounded" /></StageCard>;
 
     case "preview_wait":
-      return scripts
-        ? <StoryboardGallery scripts={scripts} platform="tiktok" onConfirm={onConfirmStoryboard} />
-        : <StageCard><p className="text-sm text-zinc-500">加载分镜预览...</p></StageCard>;
+      if (!scripts) return <StageCard><p className="text-sm text-zinc-500">加载分镜预览...</p></StageCard>;
+      const platformKeys = Object.keys(scripts);
+      const activePlatform = platformKeys[storyboardTab] || platformKeys[0];
+      return (
+        <div>
+          {/* Platform tabs */}
+          {platformKeys.length > 1 && (
+            <div className="flex gap-1 mb-6">
+              {platformKeys.map((plat, i) => (
+                <button key={plat} onClick={() => setStoryboardTab(i)}
+                  className={`px-4 py-2 rounded-lg text-xs font-medium capitalize transition-all ${
+                    i === storyboardTab
+                      ? "bg-emerald-600/10 text-emerald-400 border border-emerald-600/20"
+                      : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                  }`}>
+                  {plat}
+                </button>
+              ))}
+            </div>
+          )}
+          <StoryboardGallery scripts={scripts} platform={activePlatform} onConfirm={onConfirmStoryboard} />
+        </div>
+      );
 
     case "video_gen":
       return (

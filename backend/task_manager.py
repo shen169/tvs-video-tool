@@ -29,7 +29,9 @@ class InMemoryTaskStore(TaskStore):
         return self._tasks.get(task_id)
 
     def update(self, task_id: str, **kwargs) -> TaskState:
-        task = self._tasks[task_id]
+        task = self._tasks.get(task_id)
+        if not task:
+            raise KeyError(f"Task {task_id} not found")
         for k, v in kwargs.items():
             setattr(task, k, v)
         return task
@@ -74,6 +76,10 @@ class FileTaskStore(InMemoryTaskStore):
         return result
 
     def update(self, task_id: str, **kwargs):
-        result = super().update(task_id, **kwargs)
+        task = self._tasks.get(task_id)
+        if not task:
+            raise KeyError(f"Task {task_id} not found")
+        for k, v in kwargs.items():
+            setattr(task, k, v)
         self._save(task_id)
-        return result
+        return task

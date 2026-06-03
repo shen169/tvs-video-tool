@@ -43,6 +43,7 @@ class ShotItem(BaseModel):
     scene: str
     voiceover: str
     subtitle: str
+    continuity_anchor: Optional[str] = None
 
 
 class TaskState(BaseModel):

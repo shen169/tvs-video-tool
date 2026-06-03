@@ -48,6 +48,31 @@ def build_continuity_anchors(style: dict, creative: dict = None, product_info: d
     return "；".join(anchors)
 
 
+def _camera_for_style(camera: str, shot_purpose: str) -> str:
+    """根据风格维度+镜头目的推导实际运镜方式。"""
+    camera_map = {
+        "smooth_cinematic": {"Hook": "slow_push_in", "Build": "dolly_right", "Turn": "tracking_arc",
+                             "Develop": "steadicam_float", "Escalate": "slow_push_in", "Resolve": "slow_pull_out"},
+        "dynamic_handheld": {"Hook": "whip_pan", "Build": "handheld_walk", "Turn": "snap_zoom",
+                             "Develop": "handheld_subtle", "Escalate": "crash_zoom", "Resolve": "handheld_settle"},
+        "macro_detail": {"Hook": "extreme_slow_push", "Build": "focus_rack", "Turn": "macro_pan",
+                         "Develop": "static", "Escalate": "depth_reveal", "Resolve": "slow_pull_out"},
+    }
+    default_moves = {"Hook": "slow_push_in", "Build": "dolly_right", "Turn": "static",
+                     "Develop": "handheld_subtle", "Escalate": "slow_push_in", "Resolve": "slow_pull_out"}
+    return camera_map.get(camera, default_moves).get(shot_purpose, "static")
+
+
+def _human_scene(cfg: str, title: str, context: str = "") -> str:
+    """根据 human 维度生成人物相关描述。"""
+    if cfg == "no_human":
+        return f"{title} 纯产品展示，{context}".rstrip("，")
+    elif cfg == "hands_only":
+        return f"手部出镜操作 {title}，{context}".rstrip("，")
+    else:  # full_person
+        return f"模特使用 {title}，{context}".rstrip("，")
+
+
 async def generate_script(product_info: dict, platform: str, style: dict, creative: dict = None) -> list[dict]:
     cfg = PLATFORM_CONFIG.get(platform, PLATFORM_CONFIG["tiktok"])
     title = product_info.get("title", "this product")
@@ -55,62 +80,76 @@ async def generate_script(product_info: dict, platform: str, style: dict, creati
     shots_count = 6
     shot_dur = round(cfg["duration"] / shots_count, 1)
 
-    creative_label = creative.get("title", "") if creative else ""
     big_idea = creative.get("big_idea", "") if creative else ""
+    hook_moment = creative.get("hook_moment", "") if creative else ""
+
+    vs = style.get("visual_style", "clean_minimal")
+    cam = style.get("camera", "smooth_cinematic")
+    light = style.get("lighting", "soft_studio")
+    angle = style.get("angle", "eye_level")
+    human = style.get("human", "no_human")
+
+    # 根据 visual_style 派生场景氛围词
+    atmosphere = {
+        "clean_minimal": "极简干净背景，柔和中性色调，无干扰元素",
+        "lifestyle_warm": "温暖家居场景，自然材质，生活气息",
+        "tech_futuristic": "深色科技感背景，蓝紫氛围光，未来感",
+    }.get(vs, "专业产品展示")
 
     shots = [
         {
             "number": 1, "duration": shot_dur, "shot_type": "wide",
-            "angle": style.get("angle", "eye_level"),
-            "lighting": style.get("lighting", "soft_studio"),
-            "camera_move": "slow_push_in", "purpose": "Hook",
+            "angle": angle, "lighting": light,
+            "camera_move": _camera_for_style(cam, "Hook"), "purpose": "Hook",
             "transition": "cut",
-            "scene": f"{title} 完整展示，品牌感开场。{big_idea}",
-            "voiceover": f"Introducing the all-new {title}.",
+            "scene": f"{_human_scene(human, title, '品牌感开场。')} {atmosphere}。{big_idea} {hook_moment}",
+            "voiceover": f"Introducing the all-new {title}." if human != "full_person" else f"Meet the {title}. Your daily upgrade.",
             "subtitle": title[:30],
         },
         {
             "number": 2, "duration": shot_dur, "shot_type": "medium",
-            "angle": "45_degree", "lighting": style.get("lighting", "soft_studio"),
-            "camera_move": "dolly_right", "purpose": "Build",
+            "angle": "45_degree" if angle == "eye_level" else angle,
+            "lighting": light,
+            "camera_move": _camera_for_style(cam, "Build"), "purpose": "Build",
             "transition": "dissolve",
-            "scene": f"从不同角度展示 {title} 的设计细节和质感",
+            "scene": f"{_human_scene(human, title, '展示设计细节和质感。')} {atmosphere}。",
             "voiceover": f"Designed with precision and care.",
             "subtitle": "精工设计",
         },
         {
             "number": 3, "duration": shot_dur, "shot_type": "close_up",
-            "angle": "top_down", "lighting": "soft_studio",
-            "camera_move": "static", "purpose": "Turn",
+            "angle": "top_down", "lighting": light,
+            "camera_move": _camera_for_style(cam, "Turn"), "purpose": "Turn",
             "transition": "cut",
-            "scene": f"极近微距展示 {feat} 的细节",
+            "scene": f"极近微距展示 {feat} 的细节。{atmosphere}。",
             "voiceover": f"Look closer. {feat}.",
             "subtitle": feat[:30],
         },
         {
             "number": 4, "duration": shot_dur, "shot_type": "medium",
-            "angle": style.get("angle", "eye_level"),
-            "lighting": "natural_window", "camera_move": "handheld_subtle",
-            "purpose": "Develop", "transition": "cut",
-            "scene": f"{title} 在实际使用场景中，真实感",
-            "voiceover": "Built for your everyday life.",
+            "angle": angle, "lighting": light,
+            "camera_move": _camera_for_style(cam, "Develop"), "purpose": "Develop",
+            "transition": "cut",
+            "scene": f"{_human_scene(human, title, '真实使用场景中。')} {atmosphere}。",
+            "voiceover": "Built for your everyday life." if human != "full_person" else "It just fits your life.",
             "subtitle": "为日常而生",
         },
         {
             "number": 5, "duration": shot_dur, "shot_type": "close_up",
-            "angle": "low_hero", "lighting": "dramatic_rim",
-            "camera_move": "slow_push_in", "purpose": "Escalate",
+            "angle": "low_hero" if angle == "eye_level" else angle,
+            "lighting": "dramatic_rim" if light == "soft_studio" else light,
+            "camera_move": _camera_for_style(cam, "Escalate"), "purpose": "Escalate",
             "transition": "dissolve",
-            "scene": f"{title} 英雄镜头。光影在产品上流动，强调品质感和高级感",
+            "scene": f"{title} 英雄镜头。{atmosphere}，光影在产品上流动，品质感拉满。",
             "voiceover": "Experience the difference.",
             "subtitle": "品质之选",
         },
         {
             "number": 6, "duration": shot_dur, "shot_type": "wide",
-            "angle": "eye_level", "lighting": "soft_studio",
-            "camera_move": "slow_pull_out", "purpose": "Resolve",
+            "angle": angle, "lighting": light,
+            "camera_move": _camera_for_style(cam, "Resolve"), "purpose": "Resolve",
             "transition": "fade",
-            "scene": f"{title} CTA 收尾。品牌 Logo + 行动号召",
+            "scene": f"{_human_scene(human, title, 'CTA 收尾。')} 品牌 Logo + 行动号召。{atmosphere}。",
             "voiceover": "Get yours today. Link in bio.",
             "subtitle": "立即购买 ↓",
         },
@@ -125,7 +164,18 @@ async def generate_script(product_info: dict, platform: str, style: dict, creati
 
 
 async def generate_all_scripts(product_info: dict, platforms: list[str], style: dict, creative: dict = None) -> dict[str, list[dict]]:
+    from ..models import ShotItem
+    import logging
+    logger = logging.getLogger(__name__)
     scripts = {}
     for plat in platforms:
-        scripts[plat] = await generate_script(product_info, plat, style, creative)
+        raw = await generate_script(product_info, plat, style, creative)
+        validated = []
+        for shot in raw:
+            try:
+                validated.append(ShotItem(**shot).model_dump())
+            except Exception as e:
+                logger.warning(f"[{plat}] Shot {shot.get('number', '?')} validation failed: {e}, using raw dict")
+                validated.append(shot)
+        scripts[plat] = validated
     return scripts

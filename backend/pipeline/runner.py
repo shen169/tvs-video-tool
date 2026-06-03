@@ -78,7 +78,6 @@ async def run_stage5_and_6(task_id: str, store: InMemoryTaskStore):
         platforms = [p.value for p in task.platforms]
 
         logger.info(f"[{task_id}] Stage 5: Generating preview images")
-        store.update(task_id, stage=TaskStage.PREVIEW_WAIT)
         from .stage5_preview import generate_preview_images
         previews = {}
         for plat in platforms:

@@ -6,10 +6,21 @@ export async function listTasks() {
 }
 
 async function request(url: string, options?: RequestInit) {
-  const res = await fetch(url, options);
+  let res: Response;
+  try {
+    res = await fetch(url, options);
+  } catch (e: any) {
+    throw new Error(`网络请求失败: ${e.message || '请确认后端服务已启动 (localhost:8000)'}`);
+  }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `HTTP ${res.status}: 请求失败`);
+    }
+    // 非 JSON 响应（如代理错误页面）
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200) || '后端服务不可用'}`);
   }
   return res.json();
 }

@@ -26,6 +26,10 @@ export default function HomePage() {
 
   const handleSubmit = async () => {
     if (!url) return;
+    if (platforms.length === 0) {
+      setError("请至少选择一个目标平台");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -125,7 +129,7 @@ export default function HomePage() {
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={loading || !url}
+          disabled={loading || !url || platforms.length === 0}
           className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-[#1f1f24] disabled:text-zinc-600 text-white font-semibold text-sm tracking-wide transition-all duration-200 active:scale-[0.99]"
         >
           {loading ? (
