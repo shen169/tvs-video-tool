@@ -2,31 +2,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+const CORRECT = "tvs2024";
+
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      if (res.ok) {
-        router.push("/");
-        router.refresh();
-      } else {
-        setError("密码错误");
-      }
-    } catch {
-      setError("登录失败，请重试");
+  const handleLogin = () => {
+    if (password === CORRECT) {
+      // 直接设 cookie 后跳转，不调 API，秒响应
+      document.cookie = `tvs_auth=${CORRECT};path=/;max-age=${60 * 60 * 24 * 30};SameSite=Lax`;
+      router.push("/");
+      router.refresh();
+    } else {
+      setError("密码错误");
+      setPassword("");
     }
-    setLoading(false);
   };
 
   return (
@@ -45,10 +37,10 @@ export default function LoginPage() {
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
           onClick={handleLogin}
-          disabled={loading || !password}
-          className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 text-white font-bold transition"
+          disabled={!password}
+          className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold transition"
         >
-          {loading ? "验证中..." : "进入"}
+          进入
         </button>
       </div>
     </main>
