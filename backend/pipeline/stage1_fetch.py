@@ -1,147 +1,132 @@
 """
-Stage 1 — AI 驱动的产品分析。
+Stage 1 — 产品数据检索 + AI 分析。
 
-多层策略:
-  1. HTTP 抓取页面 HTML，提取正文文本
-  2. Tavily 搜索产品信息（页面被屏蔽时补充上下文）
-  3. DeepSeek / Anthropic AI 生成结构化产品分析
-  4. 都不可用时 fallback 到正则提取
-
-输出同时包含兼容旧字段 (title, description, price, images, category_hints)
-和 AI 新增字段 (key_features, target_audience, pain_points, use_scenarios,
-unique_selling_points, video_hook_angles)。
+两层架构:
+  ╔═══════════════════════════════════════════╗
+  ║  Layer 1: 数据检索                        ║
+  ║  Apify Amazon Actor → Tavily → HTTP      ║
+  ║  产出: 结构化产品原始数据 (title/price/    ║
+  ║         features/images/reviews...)       ║
+  ╠═══════════════════════════════════════════╣
+  ║  Layer 2: AI 分析 (DeepSeek/Anthropic)    ║
+  ║  输入: 检索到的产品原始数据                ║
+  ║  产出: 卖点/人群/痛点/场景/hook角度        ║
+  ╚═══════════════════════════════════════════╝
 """
 
 import httpx
 import json
 import os
 import re
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
+# ── Apify 配置 ──────────────────────────────────────────────────────────
+APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "")
+# Apify Amazon Product Scraper actor
+APIFY_AMAZON_ACTOR = "vaclavrut/amazon-product-scraper"
+
 # ── AI Prompt ──────────────────────────────────────────────────────────
-ANALYSIS_SYSTEM_PROMPT = """You are a world-class e-commerce product analyst specializing in video ad creation.
-Your job: analyze a product and produce a structured JSON analysis that will be used to generate short-form video ads.
+ANALYSIS_SYSTEM_PROMPT = """You are a world-class e-commerce product analyst specializing in short-form video ad creation.
+
+Your job: take RAW product data (scraped from the product page) and transform it into CREATIVE INSIGHTS for video ads.
 
 IMPORTANT RULES:
-1. Be SPECIFIC and CONCRETE. Never use placeholder text like "this product" or "amazing features".
-2. Think deeply about WHO buys this, WHY they need it, and WHAT emotional need it fulfills.
-3. Pain points should be emotionally resonant — the kind of frustration that makes someone click "buy now".
-4. Use scenarios should be vivid and visual — they will become video shots.
-5. Video hook angles should be ready-to-use opening lines for TikTok/Reels (3 seconds or less).
-6. Write in English. Keep each field concise and punchy.
-7. If the page content is sparse or missing, use the URL, product name hints, and your knowledge to fill in gaps.
-
-Return ONLY valid JSON — no markdown, no explanation, no code fences."""
-
-ANALYSIS_USER_PROMPT = """Analyze this product for video ad creation:
-
-PRODUCT URL: {url}
-
-URL HINTS:{url_hints}
-
-PAGE CONTENT:
-{page_content}
-
-Return this exact JSON structure:
-{{
-  "product_name": "Clean product name (no site prefix like 'Amazon.com:')",
-  "brand": "Brand name",
-  "category_tree": ["Level1", "Level2", "Level3"],
-  "price": "Price or empty string",
-  "key_features": ["feature 1", "feature 2", ...],
-  "target_audience": ["audience group 1", "audience group 2", ...],
-  "pain_points": ["emotional pain point 1", "pain point 2", ...],
-  "use_scenarios": ["vivid scenario 1", "scenario 2", ...],
-  "unique_selling_points": ["USP 1", "USP 2", ...],
-  "product_description": "2-3 sentence compelling summary for video intro",
-  "video_hook_angles": ["hook angle 1 (3-sec opener)", "hook angle 2", ...]
-}}"""
-
-# ── Helpers ─────────────────────────────────────────────────────────────
-
-def _extract_text_from_html(html: str, max_chars: int = 8000) -> str:
-    """从 HTML 中提取可读文本，去掉 script/style/标签。"""
-    text = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text[:max_chars]
+1. Be SPECIFIC and CONCRETE. Never say "this product" or "amazing features".
+2. Pain points must be EMOTIONALLY RESONANT — frustrations that make someone click "buy".
+3. Use scenarios must be VISUAL and VIVID — they will become actual video shots.
+4. Video hook angles must be ready-to-use opening lines (under 15 words, 3 seconds spoken).
+5. Target audience must be SPECIFIC groups (not "everyone" or "people who like nice things").
+6. Write ALL strings in English (the ads are for English-speaking markets).
+7. Return ONLY valid JSON — no markdown, no explanation, no code fences."""
 
 
-def _extract_url_hints(url: str) -> str:
-    """从 URL 中提取产品线索。"""
-    hints = []
+# ═══════════════════════════════════════════════════════════════════════
+# Layer 1: 数据检索
+# ═══════════════════════════════════════════════════════════════════════
 
-    # Amazon ASIN
-    m = re.search(r'/dp/([A-Z0-9]+)', url)
-    if m:
-        hints.append(f"Amazon ASIN: {m.group(1)}")
+async def _scrape_with_apify(asin: str) -> dict | None:
+    """用 Apify Amazon Product Scraper 抓取产品数据。"""
+    if not APIFY_TOKEN:
+        logger.info("APIFY_API_TOKEN not set, skipping Apify")
+        return None
 
-    # 产品名（在 domain 后面、/dp/ 前面）
-    m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
-    if m:
-        slug = m.group(1).replace('-', ' ')
-        hints.append(f"Product name from URL: {slug}")
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            # Step 1: 启动 actor run，等待完成
+            actor_path = APIFY_AMAZON_ACTOR.replace("/", "~")
+            resp = await client.post(
+                f"https://api.apify.com/v2/acts/{actor_path}/runs",
+                params={
+                    "token": APIFY_TOKEN,
+                    "waitForFinish": "120",
+                },
+                json={
+                    "asin": asin,
+                    "maxItems": 1,
+                    "proxyConfiguration": {"useApifyProxy": True},
+                },
+                timeout=180,
+            )
+            if resp.status_code not in (200, 201):
+                logger.warning(f"Apify returned {resp.status_code}: {resp.text[:300]}")
+                return None
 
-    # /dp/ 后面的 slug（如有）
-    m = re.search(r'/dp/[A-Z0-9]+/([^/?]+)', url)
-    if m and not m.group(1).startswith('ref='):
-        slug = m.group(1).replace('-', ' ')
-        hints.append(f"URL product slug: {slug}")
+            run_data = resp.json()
+            run_info = run_data.get("data", {})
+            run_id = run_info.get("id", "")
+            status = run_info.get("status", "")
 
-    # 域名
-    m = re.search(r'https?://(?:www\.)?([^/]+)', url)
-    if m:
-        domain = m.group(1)
-        hints.append(f"Store: {domain}")
-        if "amazon" in domain:
-            hints.append("Platform: Amazon (bot detection likely — page content may be captcha)")
-        elif "shopify" in domain:
-            hints.append("Platform: Shopify")
-        elif "walmart" in domain:
-            hints.append("Platform: Walmart")
+            if not run_id:
+                logger.warning(f"Apify: no run id: {str(run_data)[:200]}")
+                return None
 
-    return "\n".join(f"  - {h}" for h in hints) if hints else "  (none)"
+            logger.info(f"Apify run {run_id}: status={status}")
 
+            if status != "SUCCEEDED":
+                logger.warning(f"Apify run not successful: {status}")
+                return None
 
-def _extract_images_from_html(html: str, url: str) -> list[str]:
-    """从 HTML 中提取图片 URL，过滤掉图标和占位图。"""
-    images = []
-    # 优先找 hi-res
-    hi_res = re.findall(r'"hiRes":"([^"]+)"', html)
-    images.extend(hi_res)
-    # 再找 large
-    large = re.findall(r'"large":"([^"]+)"', html)
-    images.extend(large)
-    # 最后用 img 标签兜底
-    if not images:
-        img_srcs = re.findall(r'<img[^>]*src="([^"]*)"', html)
-        images = [s for s in img_srcs if s.startswith("http")
-                  and not s.endswith(".svg")
-                  and "sprite" not in s
-                  and "icon" not in s.lower()
-                  and "logo" not in s.lower()][:10]
-    # 过滤掉明显是 UI 元素的图
-    skip_kw = ["nav-sprite", "pixel", "transparent", "icon", "logo", "button"]
-    images = [img for img in images if not any(kw in img.lower() for kw in skip_kw)]
-    return images[:5]
+            # Step 2: 获取 dataset items
+            default_dataset_id = run_info.get("defaultDatasetId", "")
+            if default_dataset_id:
+                ds_resp = await client.get(
+                    f"https://api.apify.com/v2/datasets/{default_dataset_id}/items",
+                    params={"token": APIFY_TOKEN, "format": "json"},
+                )
+                if ds_resp.status_code == 200:
+                    items = ds_resp.json()
+                    if isinstance(items, list) and len(items) > 0:
+                        item = items[0]
+                        logger.info(f"Apify scraped: {item.get('title', 'N/A')[:80]}")
+                        return item
+                    elif isinstance(items, dict):
+                        logger.info(f"Apify scraped: {items.get('title', 'N/A')[:80]}")
+                        return items
+
+            logger.warning("Apify returned empty dataset")
+            return None
+
+    except Exception as e:
+        logger.warning(f"Apify scraping failed: {e}")
+        return None
 
 
-async def _tavily_search(url: str, product_hints: str) -> str:
-    """使用 Tavily 搜索产品信息，作为页面抓取失败时的补充。"""
+async def _search_with_tavily(url: str, product_hints: str) -> str:
+    """用 Tavily 搜索产品评价和规格信息。"""
     api_key = os.getenv("TAVILY_API_KEY", "")
     if not api_key:
         return ""
 
-    # 从 URL/hints 提取搜索关键词
+    # 从 URL 提取产品名作为搜索关键词
     query_parts = []
     m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
     if m:
         query_parts.append(m.group(1).replace('-', ' '))
-    else:
-        # 用 URL 最后一段作为产品名
+
+    if not query_parts:
         parts = url.rstrip('/').split('/')
         if parts:
             query_parts.append(parts[-1].replace('-', ' '))
@@ -149,7 +134,7 @@ async def _tavily_search(url: str, product_hints: str) -> str:
     if not query_parts:
         return ""
 
-    query = f"{' '.join(query_parts)} product review features specifications"
+    query = f"{' '.join(query_parts)} product review features specifications pros cons"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -164,25 +149,280 @@ async def _tavily_search(url: str, product_hints: str) -> str:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                answer = data.get("answer", "")
-                results = data.get("results", [])
-                text = answer + "\n\n"
-                for r in results[:5]:
+                text = data.get("answer", "") + "\n\n"
+                for r in data.get("results", [])[:5]:
                     text += f"- {r.get('title', '')}: {r.get('content', '')[:300]}\n"
-                logger.info(f"Tavily search returned {len(text)} chars for '{query[:60]}'")
+                logger.info(f"Tavily search: {len(text)} chars for '{query[:60]}'")
                 return text[:4000]
-            else:
-                logger.warning(f"Tavily search failed: {resp.status_code}")
-                return ""
+            return ""
     except Exception as e:
-        logger.warning(f"Tavily search error: {e}")
+        logger.warning(f"Tavily search failed: {e}")
         return ""
 
 
-# ── AI API 调用 — 多 Provider 支持 ──────────────────────────────────────
+async def _fetch_html(url: str) -> str:
+    """直接 HTTP 抓取页面（Amazon 通常会被反爬）。"""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/130.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+            return resp.text
+    except Exception as e:
+        logger.warning(f"HTTP fetch failed: {e}")
+        return ""
 
-async def _call_deepseek(user_prompt: str) -> str | None:
-    """通过 DeepSeek API (OpenAI 兼容) 调用。"""
+
+def _parse_html_basics(html: str) -> dict:
+    """从 HTML 中提取基础信息（fallback 用，兼容 bot detection 页面）。"""
+    title = ""
+    desc = ""
+    price = ""
+    images = []
+    category_hints = []
+
+    if len(html) < 500:
+        return {"title": "", "description": "", "price": "", "images": [], "category_hints": []}
+
+    # 1) <title> 标签（bot detection 页面也有！包含完整产品名）
+    m = re.search(r'<title[^>]*>(.*?)</title>', html, re.DOTALL | re.IGNORECASE)
+    if m:
+        raw_title = re.sub(r'<[^>]+>', '', m.group(1)).strip()
+        # 去掉 "Amazon.com:" 前缀和 " : Health & Household" 等后缀
+        raw_title = re.sub(r'^Amazon\.com\s*:?\s*', '', raw_title).strip()
+        raw_title = re.sub(r'\s*:\s*(Health|Home|Sports|Electronics|Beauty|Kitchen|Office|Pet|Garden|Toys|Automotive|Fashion|Medical|Baby|Tools|Food|Music|Books|Software|Video Games|Appstore|Apps|Kindle Store|Clothing|Jewelry|Shoes|Handmade|Industrial|Scientific|Musical Instruments|Grocery|Luxury|Collectibles|Magazine|Subscription|Cell Phones|Accessories|Digital Music|CDs|Vinyl|DVD|Blu-ray|Prime Video|Alexa Skills|Echo|Fire|Fire Tablet|Fire TV|Kindle|Kindle E-readers|Kindle Books|Audible|Amazon Fresh|Amazon Pharmacy|Amazon Clinic|One Medical|Amazon Kids\+|Amazon Photos|Amazon Drive|Amazon Music|Amazon Pay|Amazon Credit|Amazon Gift Cards|Amazon Handmade|Amazon Home|Amazon Launchpad|Amazon Renewed|Amazon Warehouse|Amazon Second Chance|Amazon Outlet|Amazon Explore)\s*$', '', raw_title)
+        title = raw_title.strip()
+
+    # 2) productTitle span（仅在真实 Amazon 页面有效）
+    if not title:
+        m = re.search(r'<span[^>]*id="productTitle"[^>]*>(.*?)</span>', html, re.DOTALL)
+        if m:
+            title = re.sub(r'<[^>]+>', '', m.group(1)).strip()
+
+    # 3) Meta description
+    m = re.search(r'<meta[^>]*name="description"[^>]*content="([^"]*)"', html, re.IGNORECASE)
+    if m:
+        desc = m.group(1)[:500]
+
+    # 4) Price — 多种格式
+    for pattern in [r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?',
+                    r'\$\d+\.?\d*']:
+        m = re.search(pattern, html)
+        if m and m.group(0) not in ('$0', '$0.00'):
+            price = m.group(0)
+            break
+
+    # 5) Images
+    for pat in [r'"hiRes":"([^"]+)"', r'"large":"([^"]+)"',
+                r'<img[^>]*src="([^"]*)"']:
+        found = re.findall(pat, html)
+        images = [u for u in found if u.startswith("http") and not u.endswith(".svg")
+                  and "sprite" not in u.lower() and "icon" not in u.lower()
+                  and "pixel" not in u.lower() and "logo" not in u.lower()][:10]
+        if images:
+            break
+
+    # 6) Category — 从 title/body 中推断
+    body = re.sub(r'<[^>]+>', ' ', html[:50000])
+    text = (title + " " + body).lower()
+    cate_kw = ["electronics", "home", "kitchen", "sports", "beauty", "fashion",
+               "health", "medical", "fitness", "wellness", "pain relief",
+               "office", "pet", "garden", "automotive", "tools"]
+    for kw in cate_kw:
+        if kw in text:
+            category_hints.append(kw)
+
+    logger.info(f"HTML parsed: title='{title[:80]}', price='{price}', "
+                f"images={len(images)}, categories={category_hints}")
+
+    return {"title": title, "description": desc[:500], "price": price,
+            "images": images, "category_hints": category_hints[:5]}
+
+
+async def _retrieve_product_data(url: str) -> dict:
+    """
+    Layer 1 — 数据检索。
+    优先: Apify Amazon Actor → Tavily 搜索 → HTTP 直接抓取。
+    返回: 结构化的产品原始数据。
+    """
+    retrieved = {
+        "title": "",
+        "description": "",
+        "price": "",
+        "features": [],       # bullet points / specs
+        "images": [],
+        "category": [],
+        "rating": "",
+        "review_count": "",
+        "search_context": "",  # Tavily 搜索结果
+        "source": "none",      # apify | tavily | http | none
+    }
+
+    # 1) 提取 ASIN（Apify 需要）
+    asin_match = re.search(r'/dp/([A-Z0-9]+)', url)
+    asin = asin_match.group(1) if asin_match else ""
+
+    # 2) Apify Amazon Product Scraper
+    if asin:
+        apify_data = await _scrape_with_apify(asin)
+        if apify_data:
+            retrieved.update({
+                "title": apify_data.get("title", ""),
+                "description": apify_data.get("description", "")[:800],
+                "price": apify_data.get("price", {}).get("value", "") if isinstance(apify_data.get("price"), dict) else str(apify_data.get("price", "")),
+                "features": apify_data.get("featureBullets", []) or apify_data.get("features", []),
+                "images": apify_data.get("imageUrls", []) or apify_data.get("images", []) or [],
+                "category": apify_data.get("category", []) or apify_data.get("categories", []),
+                "rating": str(apify_data.get("rating", "") or apify_data.get("starRating", "")),
+                "review_count": str(apify_data.get("reviewsCount", "") or apify_data.get("numberOfReviews", "")),
+                "source": "apify",
+            })
+            logger.info(f"Apify data: title={retrieved['title'][:60]}, "
+                        f"features={len(retrieved['features'])}, "
+                        f"images={len(retrieved['images'])}")
+
+    # 3) Tavily 搜索（无论 Apify 成功与否都搜，补充评价/口碑）
+    url_hints = ""
+    if "amazon" in url:
+        m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
+        if m:
+            url_hints = m.group(1).replace('-', ' ')
+    elif not retrieved["title"]:
+        url_hints = url.split("/")[-1].replace("-", " ")[:100]
+
+    search_text = await _search_with_tavily(url, url_hints)
+    if search_text:
+        retrieved["search_context"] = search_text
+        if retrieved["source"] == "none":
+            retrieved["source"] = "tavily"
+
+    # 4) HTTP 兜底
+    if retrieved["source"] == "none":
+        html = await _fetch_html(url)
+        basics = _parse_html_basics(html)
+        if basics.get("title"):
+            retrieved.update(basics)
+            retrieved["source"] = "http"
+
+    # 5) 如果什么都没拿到，用 URL 本身作为线索
+    if not retrieved["title"]:
+        # 从 URL 猜产品名
+        for pattern in [r'\.com/([^/]+)/dp/', r'\.com/([^/]+)/product/',
+                        r'\.com/product/([^/]+)', r'/([^/]+)/dp/']:
+            m = re.search(pattern, url)
+            if m:
+                retrieved["title"] = m.group(1).replace('-', ' ')
+                break
+        if not retrieved["title"]:
+            retrieved["title"] = url.split("/")[-1].replace('-', ' ')[:100]
+
+    # 清理 features（确保是字符串列表）
+    if retrieved["features"]:
+        cleaned = []
+        for f in retrieved["features"]:
+            if isinstance(f, str):
+                cleaned.append(f.strip()[:200])
+            elif isinstance(f, dict):
+                cleaned.append(str(f.get("text", f.get("name", str(f))))[:200])
+        retrieved["features"] = [f for f in cleaned if f and len(f) > 3][:10]
+
+    # 清理 images（确保是 URL 字符串列表）
+    if retrieved["images"]:
+        img_cleaned = []
+        for img in retrieved["images"]:
+            if isinstance(img, str) and img.startswith("http"):
+                img_cleaned.append(img)
+            elif isinstance(img, dict):
+                url_val = img.get("url", img.get("src", img.get("link", "")))
+                if url_val and url_val.startswith("http"):
+                    img_cleaned.append(url_val)
+        retrieved["images"] = img_cleaned[:10]
+
+    logger.info(f"Data source: {retrieved['source']} | "
+                f"Title: {retrieved['title'][:60]} | "
+                f"Features: {len(retrieved['features'])} | "
+                f"Images: {len(retrieved['images'])} | "
+                f"Search: {len(retrieved['search_context'])} chars")
+
+    return retrieved
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Layer 2: AI 分析
+# ═══════════════════════════════════════════════════════════════════════
+
+def _build_analysis_prompt(retrieved: dict, url: str) -> str:
+    """把检索到的原始数据组装成给 AI 分析的 prompt。"""
+    parts = [f"PRODUCT URL: {url}\n"]
+
+    parts.append("=== RAW PRODUCT DATA (scraped from page) ===")
+
+    if retrieved.get("title"):
+        parts.append(f"Title: {retrieved['title']}")
+
+    if retrieved.get("price"):
+        parts.append(f"Price: {retrieved['price']}")
+
+    if retrieved.get("rating"):
+        parts.append(f"Rating: {retrieved['rating']} ({retrieved.get('review_count', '?')} reviews)")
+
+    if retrieved.get("features"):
+        parts.append("Features / Bullet Points:")
+        for i, f in enumerate(retrieved["features"], 1):
+            parts.append(f"  {i}. {f}")
+
+    if retrieved.get("description"):
+        parts.append(f"Description: {retrieved['description'][:600]}")
+
+    if retrieved.get("category"):
+        cat = retrieved["category"]
+        if isinstance(cat, list):
+            parts.append(f"Category: {' > '.join(str(c) for c in cat)}")
+        else:
+            parts.append(f"Category: {cat}")
+
+    if retrieved.get("search_context"):
+        parts.append(f"\n=== ADDITIONAL SEARCH RESULTS ===\n{retrieved['search_context'][:3000]}")
+
+    parts.append(f"\nData source: {retrieved.get('source', 'unknown')}")
+
+    return "\n".join(parts)
+
+
+ANALYSIS_USER_PROMPT = """Analyze this product and return a JSON object for video ad creation.
+
+{retrieved_data}
+
+Return this EXACT JSON structure (fill every field, use empty string/list if truly unknown):
+{{
+  "product_name": "Clean, short product name (max 8 words, remove brand if redundant)",
+  "brand": "Brand name",
+  "category_tree": ["Level1", "Level2", "Level3"],
+  "price": "Price string (e.g. '$39.99') or empty string",
+  "key_features": ["Most important feature 1", "feature 2", "feature 3", "feature 4", "feature 5"],
+  "target_audience": ["Specific group 1 (e.g. 'Office workers with chronic back pain')", "group 2", "group 3", "group 4"],
+  "pain_points": ["Emotional frustration 1 (write as if you've experienced it)", "pain 2", "pain 3", "pain 4"],
+  "use_scenarios": ["Vivid visual scene 1 (specific enough to film)", "scene 2", "scene 3", "scene 4"],
+  "unique_selling_points": ["What makes this different/better 1", "USP 2", "USP 3"],
+  "product_description": "A compelling 2-3 sentence summary for video voiceover intro",
+  "video_hook_angles": ["Short hook opener 1 (under 15 words)", "hook 2 (under 15 words)", "hook 3 (under 15 words)", "hook 4 (under 15 words)"]
+}}
+
+CRITICAL:
+- video_hook_angles MUST be short (< 15 words each). Think TikTok hooks: "Back pain ruining your day?", "No wires. No pills. Just relief."
+- target_audience MUST be specific groups, NOT labels like "primary" or "secondary".
+- pain_points MUST be emotional/frustrating, not just feature restatements.
+- use_scenarios MUST be visual scenes you could film, not abstract concepts."""
+
+
+async def _call_deepseek(prompt: str) -> str | None:
+    """DeepSeek API (OpenAI 兼容)。"""
     api_key = os.getenv("DEEPSEEK_API_KEY", "")
     if not api_key:
         return None
@@ -199,29 +439,28 @@ async def _call_deepseek(user_prompt: str) -> str | None:
                     "model": "deepseek-chat",
                     "messages": [
                         {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
+                        {"role": "user", "content": prompt},
                     ],
                     "max_tokens": 2048,
                     "temperature": 0.7,
                 },
             )
             if resp.status_code != 200:
-                logger.error(f"DeepSeek API returned {resp.status_code}: {resp.text[:300]}")
+                logger.error(f"DeepSeek returned {resp.status_code}: {resp.text[:300]}")
                 return None
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            return resp.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error(f"DeepSeek API call failed: {e}")
+        logger.error(f"DeepSeek call failed: {e}")
         return None
 
 
-async def _call_anthropic(user_prompt: str) -> str | None:
-    """通过 Anthropic API 调用（SDK 优先，HTTP 备用）。"""
+async def _call_anthropic(prompt: str) -> str | None:
+    """Anthropic API (SDK 优先，HTTP 备用)。"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None
 
-    # 尝试 SDK
+    # SDK
     try:
         from anthropic import AsyncAnthropic
         client = AsyncAnthropic(api_key=api_key, timeout=60)
@@ -229,13 +468,13 @@ async def _call_anthropic(user_prompt: str) -> str | None:
             model="claude-haiku-4-5-20251001",
             max_tokens=2048,
             system=ANALYSIS_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text
     except Exception as e:
-        logger.warning(f"Anthropic SDK failed ({e}), trying HTTP...")
+        logger.warning(f"Anthropic SDK failed: {e}")
 
-    # 备用 HTTP
+    # HTTP fallback
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(
@@ -249,197 +488,120 @@ async def _call_anthropic(user_prompt: str) -> str | None:
                     "model": "claude-haiku-4-5-20251001",
                     "max_tokens": 2048,
                     "system": ANALYSIS_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": user_prompt}],
+                    "messages": [{"role": "user", "content": prompt}],
                 },
             )
             if resp.status_code != 200:
-                logger.error(f"Anthropic HTTP returned {resp.status_code}: {resp.text[:300]}")
+                logger.error(f"Anthropic HTTP returned {resp.status_code}")
                 return None
-            data = resp.json()
-            return data["content"][0]["text"]
+            return resp.json()["content"][0]["text"]
     except Exception as e:
-        logger.error(f"Anthropic HTTP call failed: {e}")
+        logger.error(f"Anthropic HTTP failed: {e}")
         return None
 
 
-async def _call_ai_analysis(url: str, page_content: str, url_hints: str,
-                            search_context: str) -> dict | None:
+async def _analyze_with_ai(retrieved: dict, url: str) -> dict | None:
     """
-    调用 AI 做产品分析。
-    优先级: Anthropic → DeepSeek（任一可用即用）。
+    Layer 2 — AI 分析。
+    把检索到的产品原始数据发给 DeepSeek/Anthropic，产出创意分析。
     """
-    # 组装上下文
-    context_parts = [f"PRODUCT URL: {url}"]
-    if url_hints.strip():
-        context_parts.append(f"URL HINTS:\n{url_hints}")
-    if search_context.strip():
-        context_parts.append(f"WEB SEARCH RESULTS:\n{search_context}")
-    context_parts.append(
-        f"PAGE CONTENT:\n{page_content if page_content else '(page could not be fetched — use URL and search results)'}"
-    )
+    retrieved_text = _build_analysis_prompt(retrieved, url)
+    full_prompt = ANALYSIS_USER_PROMPT.format(retrieved_data=retrieved_text)
 
-    user_prompt = "\n\n".join(context_parts)
-
-    # 按优先级尝试各 AI provider
-    raw_text = await _call_anthropic(user_prompt)
+    # 优先 Anthropic，fallback DeepSeek
+    raw = await _call_anthropic(full_prompt)
     provider = "anthropic"
-
-    if not raw_text:
-        raw_text = await _call_deepseek(user_prompt)
+    if not raw:
+        raw = await _call_deepseek(full_prompt)
         provider = "deepseek"
 
-    if not raw_text:
-        logger.warning("No AI provider available — set ANTHROPIC_API_KEY or DEEPSEEK_API_KEY")
+    if not raw:
+        logger.warning("No AI provider available")
         return None
 
-    logger.info(f"AI analysis via {provider}, response length: {len(raw_text)}")
+    logger.info(f"AI analysis via {provider}, response: {len(raw)} chars")
 
-    # 从回复中提取 JSON
-    json_match = re.search(r'\{[\s\S]*\}', raw_text)
+    # 提取 JSON
+    json_match = re.search(r'\{[\s\S]*\}', raw)
     if not json_match:
-        logger.warning(f"No JSON found in AI response, raw: {raw_text[:300]}")
+        logger.warning(f"No JSON in AI response: {raw[:300]}")
         return None
 
     try:
         return json.loads(json_match.group(0))
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse failed: {e}, raw: {raw_text[:300]}")
+        logger.warning(f"JSON parse failed: {e}")
         return None
 
 
-def _fallback_analysis(url: str, page_content: str, url_hints: str,
-                       ai_raw_text: str = "") -> dict:
-    """当 AI 不可用时，用传统方法尽可能提取产品信息。"""
-    title = ""
-    desc = ""
-    price = ""
-    images = []
-    category_hints = []
+# ═══════════════════════════════════════════════════════════════════════
+# 组装输出
+# ═══════════════════════════════════════════════════════════════════════
 
-    # 从 HTML 提取基础信息
-    if page_content:
-        m = re.search(r'(?:productTitle|title)[^>]*>([^<]+)', page_content)
-        if m:
-            title = m.group(1).strip()
-
-        m = re.search(r'<meta[^>]*name="description"[^>]*content="([^"]*)"', page_content, re.IGNORECASE)
-        if m:
-            desc = m.group(1)[:500]
-
-        m = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?', page_content)
-        if m:
-            price = m.group(0)
-
-        images = _extract_images_from_html(page_content, url)
-
-        body_text = re.sub(r'<[^>]+>', ' ', page_content[:50000])
-        cate_kw = ["electronics", "home", "kitchen", "sports", "beauty", "fashion",
-                     "toys", "automotive", "health", "office", "pet", "garden",
-                     "medical", "fitness", "wellness", "pain relief"]
-        for kw in cate_kw:
-            if kw.lower() in body_text.lower():
-                category_hints.append(kw)
-
-    # 从 URL 提取标题
-    if not title:
-        m = re.search(r'/dp/[A-Z0-9]+/([^/?]+)', url)
-        if m:
-            title = m.group(1).replace('-', ' ')[:200]
-
-    return {
-        "title": title or url,
-        "description": desc,
-        "price": price,
-        "images": images,
-        "category_hints": category_hints[:5],
-        "url": url,
-        # AI 字段置空，标记未分析
-        "brand": "",
-        "key_features": [],
-        "target_audience": [],
-        "pain_points": [],
-        "use_scenarios": [],
-        "unique_selling_points": [],
-        "video_hook_angles": [],
-        "product_summary": "",
-        "ai_analyzed": False,
-        "ai_raw": ai_raw_text[:500] if ai_raw_text else "",
-    }
-
-
-def _build_result(url: str, ai_data: dict, page_content: str) -> dict:
-    """将 AI 分析结果 + 页面提取合并为统一输出。"""
-    images = _extract_images_from_html(page_content, url)
-
-    return {
+def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
+    """把检索数据 + AI 分析合并为最终输出。"""
+    result = {
         # ── 兼容旧字段 ──
-        "title": ai_data.get("product_name", url),
-        "description": ai_data.get("product_description", ""),
-        "price": ai_data.get("price", ""),
-        "images": images,
-        "category_hints": ai_data.get("category_tree", []),
+        "title": (ai_data.get("product_name") if ai_data else "") or retrieved.get("title", url),
+        "description": (ai_data.get("product_description") if ai_data else "") or retrieved.get("description", ""),
+        "price": (ai_data.get("price") if ai_data else "") or retrieved.get("price", ""),
+        "images": retrieved.get("images", []),
+        "category_hints": (ai_data.get("category_tree") if ai_data else []) or retrieved.get("category", []),
         "url": url,
         # ── AI 新增字段 ──
-        "brand": ai_data.get("brand", ""),
-        "key_features": ai_data.get("key_features", []),
-        "target_audience": ai_data.get("target_audience", []),
-        "pain_points": ai_data.get("pain_points", []),
-        "use_scenarios": ai_data.get("use_scenarios", []),
-        "unique_selling_points": ai_data.get("unique_selling_points", []),
-        "video_hook_angles": ai_data.get("video_hook_angles", []),
-        "product_summary": ai_data.get("product_description", ""),
-        "ai_analyzed": True,
+        "brand": (ai_data.get("brand") if ai_data else "") or "",
+        "key_features": (ai_data.get("key_features") if ai_data else []) or retrieved.get("features", []),
+        "target_audience": ai_data.get("target_audience", []) if ai_data else [],
+        "pain_points": ai_data.get("pain_points", []) if ai_data else [],
+        "use_scenarios": ai_data.get("use_scenarios", []) if ai_data else [],
+        "unique_selling_points": ai_data.get("unique_selling_points", []) if ai_data else [],
+        "video_hook_angles": ai_data.get("video_hook_angles", []) if ai_data else [],
+        "product_summary": (ai_data.get("product_description") if ai_data else "") or "",
+        # ── 元数据 ──
+        "ai_analyzed": ai_data is not None,
+        "data_source": retrieved.get("source", "none"),
         "error": None,
     }
+
+    # 兜底：如果 AI 分析没做，用检索数据填充 key_features
+    if not result["key_features"]:
+        result["key_features"] = retrieved.get("features", [])[:5]
+
+    # 确保 title 干净（去掉 Amazon 前缀）
+    for prefix in ["Amazon.com:", "Amazon.com :", "Amazon.com"]:
+        if result["title"].startswith(prefix):
+            result["title"] = result["title"][len(prefix):].strip().lstrip(":").strip()
+
+    return result
 
 
 # ── 主入口 ──────────────────────────────────────────────────────────────
 
 async def fetch_product_info(url: str) -> dict:
     """
-    抓取产品页面并用 AI 分析，返回结构化产品信息。
+    产品分析主入口。
 
-    即使在无法获取页面的情况下（如 Amazon bot detection），
-    AI 仍可根据 URL 中的产品线索 + 知识库做出高质量分析。
+    Layer 1: Apify → Tavily → HTTP 检索产品原始数据
+    Layer 2: DeepSeek/Anthropic AI 分析 → 创意输出
     """
-    # Step 1: HTTP 抓取
-    page_content = ""
-    html_raw = ""
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(url, headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/130.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-            })
-            html_raw = resp.text
-            page_content = _extract_text_from_html(html_raw)
-            logger.info(f"Fetched {len(html_raw)} bytes, extracted {len(page_content)} chars of text")
-    except Exception as e:
-        logger.warning(f"Page fetch failed for {url}: {e}")
+    logger.info(f"Stage 1 start: {url[:100]}")
 
-    # Step 2: URL 线索
-    url_hints = _extract_url_hints(url)
+    # ── Layer 1: 数据检索 ──
+    retrieved = await _retrieve_product_data(url)
 
-    # Step 2.5: Tavily 搜索（页面抓取失败时补充产品信息）
-    search_context = ""
-    if len(html_raw) < 10000:  # 页面内容不足（被反爬），用搜索补充
-        logger.info("Page content insufficient, searching via Tavily...")
-        search_context = await _tavily_search(url, url_hints)
-    else:
-        logger.info(f"Page content sufficient ({len(html_raw)} bytes), skipping Tavily")
+    if retrieved.get("error"):
+        return {
+            "title": url, "description": "", "price": "", "images": [],
+            "category_hints": [], "url": url,
+            "key_features": [], "target_audience": [], "pain_points": [],
+            "use_scenarios": [], "unique_selling_points": [],
+            "video_hook_angles": [], "product_summary": "",
+            "ai_analyzed": False, "data_source": "error",
+            "error": retrieved["error"],
+        }
 
-    # Step 3: AI 分析
-    ai_data = await _call_ai_analysis(url, page_content, url_hints, search_context)
+    # ── Layer 2: AI 分析 ──
+    ai_data = await _analyze_with_ai(retrieved, url)
 
-    # Step 4: 组装结果
-    if ai_data:
-        logger.info(f"AI analysis succeeded: {ai_data.get('product_name', 'N/A')[:80]}")
-        return _build_result(url, ai_data, html_raw)
-    else:
-        logger.info("Falling back to regex-based extraction")
-        return _fallback_analysis(url, html_raw, url_hints)
+    # ── 组装 ──
+    return _assemble_result(url, retrieved, ai_data)
