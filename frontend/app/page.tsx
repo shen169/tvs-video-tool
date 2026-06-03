@@ -67,15 +67,30 @@ export default function HomePage() {
           ))}
         </div>
 
-        <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-          <label className="text-sm text-zinc-400">产品参考图（可选，不传则 AI 自动生成）</label>
+        <label className={`block p-6 rounded-xl border-2 border-dashed cursor-pointer transition text-center ${
+          image ? "border-green-500 bg-green-500/10" : "border-zinc-600 hover:border-zinc-400 bg-zinc-900"
+        }`}>
           <input
             type="file"
             accept="image/*"
-            className="mt-2 text-sm text-zinc-300"
+            className="hidden"
             onChange={(e) => setImage(e.target.files?.[0] || null)}
           />
-        </div>
+          {image ? (
+            <div className="space-y-1">
+              <div className="text-2xl">📸</div>
+              <div className="text-green-400 font-medium">{image.name}</div>
+              <div className="text-xs text-zinc-500">点击更换图片</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-3xl">🖼️</div>
+              <div className="text-zinc-300 font-medium">上传产品参考图</div>
+              <div className="text-xs text-zinc-500">可选 · 不传则 AI 自动生成白底商品图</div>
+              <div className="text-xs text-zinc-600">点击选择图片 或 拖拽到此处</div>
+            </div>
+          )}
+        </label>
 
         {error && (
           <div className="p-3 rounded-lg bg-red-900/50 border border-red-700 text-red-300 text-sm">{error}</div>
