@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ── Apify 配置 ──────────────────────────────────────────────────────────
 APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "")
 # Apify Amazon Product Scraper actor
-APIFY_AMAZON_ACTOR = "vaclavrut/amazon-product-scraper"
+APIFY_AMAZON_ACTOR = "junglee/amazon-crawler"
 
 # ── AI Prompt ──────────────────────────────────────────────────────────
 ANALYSIS_SYSTEM_PROMPT = """You are a world-class e-commerce product analyst specializing in short-form video ad creation.
@@ -64,12 +64,15 @@ async def _scrape_with_apify(asin: str) -> dict | None:
                     "waitForFinish": "120",
                 },
                 json={
-                    "asin": asin,
-                    "maxItems": 1,
+                    "asinCodes": [asin],
+                    "maxItemsPerAsin": 1,
                     "proxyConfiguration": {"useApifyProxy": True},
                 },
                 timeout=180,
             )
+            if resp.status_code == 403:
+                logger.warning("Apify quota exceeded — falling back to Tavily")
+                return None
             if resp.status_code not in (200, 201):
                 logger.warning(f"Apify returned {resp.status_code}: {resp.text[:300]}")
                 return None
