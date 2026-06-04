@@ -92,6 +92,7 @@ async def confirm_storyboard(task_id: str, data: dict):
         raise HTTPException(status_code=404, detail="task not found")
     if task.stage != TaskStage.PREVIEW_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'preview_wait'")
+    store.update(task_id, stage=TaskStage.VIDEO_GEN)
     from .pipeline.runner import run_stage5_and_6
     import asyncio as _asyncio
     _asyncio.create_task(run_stage5_and_6(task_id, store))
