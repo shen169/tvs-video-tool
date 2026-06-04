@@ -36,7 +36,11 @@ export default function HistoryPage() {
         </div>
       ) : tasks.length === 0 ? (
         <div className="text-center py-24 animate-in animate-in-1">
-          <div className="text-5xl mb-4 opacity-15">🎬</div>
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-800/50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-zinc-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M3.375 6.75h4.5m-3 4.5h3m-1.5 4.5h1.5m3-9h12a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-12a2.25 2.25 0 01-2.25-2.25v-9a2.25 2.25 0 012.25-2.25Z" />
+            </svg>
+          </div>
           <p className="text-zinc-500 text-sm">No tasks yet</p>
           <a href="/" className="text-sm text-amber-400 hover:text-amber-300 mt-2 inline-block font-medium transition-colors">
             Create your first video →

@@ -83,7 +83,7 @@ export default function HomePage() {
               const active = platforms.includes(p.key);
               return (
                 <button key={p.key} onClick={() => togglePlatform(p.key)}
-                  className={`p-4 rounded-2xl border text-left transition-all duration-300 card-lift ${
+                  className={`p-4 rounded-2xl border text-left transition-all duration-300 card-lift cursor-pointer ${
                     active
                       ? `bg-gradient-to-br ${p.color} text-zinc-100`
                       : "border-[#27272c] bg-[#121214] text-zinc-500 hover:border-zinc-600 hover:text-zinc-400"

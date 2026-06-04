@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Icon, SvgIcon } from "./Icons";
 
 export default function ProductAnalysis({ info, collapsed }: { info: Record<string, any> | null; collapsed?: boolean }) {
   const [open, setOpen] = useState(!collapsed);
@@ -40,17 +41,20 @@ export default function ProductAnalysis({ info, collapsed }: { info: Record<stri
           {/* AI Grid */}
           {hasAI && features.length > 0 && (
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <InsightCard icon="🔑" label="Key Features" color="amber" items={features.slice(0, 5)} />
-              {audience.length > 0 && <InsightCard icon="👤" label="Target Audience" color="cyan" items={audience.slice(0, 4)} />}
-              {pains.length > 0 && <InsightCard icon="💢" label="Pain Points" color="red" items={pains.slice(0, 4)} />}
-              {scenarios.length > 0 && <InsightCard icon="🎬" label="Use Scenarios" color="violet" items={scenarios.slice(0, 4)} />}
+              <InsightCard icon={Icon.key} label="Key Features" color="amber" items={features.slice(0, 5)} />
+              {audience.length > 0 && <InsightCard icon={Icon.user} label="Target Audience" color="cyan" items={audience.slice(0, 4)} />}
+              {pains.length > 0 && <InsightCard icon={Icon.alert} label="Pain Points" color="red" items={pains.slice(0, 4)} />}
+              {scenarios.length > 0 && <InsightCard icon={Icon.camera} label="Use Scenarios" color="violet" items={scenarios.slice(0, 4)} />}
             </div>
           )}
 
           {/* Hooks */}
           {hooks.length > 0 && (
             <div className="p-3.5 rounded-xl bg-amber-500/[0.04] border border-amber-500/10">
-              <p className="text-[10px] text-amber-400/80 font-semibold uppercase tracking-wider mb-2.5">🎯 Video Hook Angles</p>
+              <div className="flex items-center gap-1.5 mb-2.5 text-amber-400/80">
+                <SvgIcon d={Icon.sparkle} size={3.5} />
+                <p className="text-[10px] font-semibold uppercase tracking-wider">Video Hook Angles</p>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {hooks.map((h: string, i: number) => (
                   <span key={i} className="text-[11px] px-2.5 py-1 rounded-lg bg-[#1c1c20] text-zinc-400 border border-zinc-700/30">
@@ -97,9 +101,10 @@ function InsightCard({ icon, label, color, items }: {
   };
   return (
     <div className={`p-3.5 rounded-xl bg-[#0d0d0f] border ${borders[color] || "border-zinc-700/20"}`}>
-      <p className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${texts[color] || "text-zinc-400"}`}>
-        {icon} {label}
-      </p>
+      <div className={`flex items-center gap-1.5 mb-2 ${texts[color] || "text-zinc-400"}`}>
+        <SvgIcon d={icon} size={3.5} />
+        <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+      </div>
       <ul className="space-y-1.5">
         {items.map((item: string, i: number) => (
           <li key={i} className="text-[11px] text-zinc-400 leading-relaxed flex gap-1.5">

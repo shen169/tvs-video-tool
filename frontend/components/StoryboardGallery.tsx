@@ -1,4 +1,5 @@
 "use client";
+import { Icon, SvgIcon } from "./Icons";
 
 export default function StoryboardGallery({
   scripts, previewImages, platform, onConfirm,
@@ -67,7 +68,10 @@ export default function StoryboardGallery({
                   <span className="text-zinc-700">{shot.transition}</span>
                 </div>
                 {shot.voiceover && (
-                  <p className="text-[10px] text-zinc-500 mt-2 italic line-clamp-1">🎤 {shot.voiceover}</p>
+                  <p className="text-[10px] text-zinc-500 mt-2 italic line-clamp-1 flex items-center gap-1">
+                    <SvgIcon d={Icon.play} size={3} className="text-amber-500/60" />
+                    {shot.voiceover}
+                  </p>
                 )}
               </div>
             </div>

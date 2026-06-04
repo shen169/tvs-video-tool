@@ -1,3 +1,5 @@
+import { Icon, SvgIcon } from "./Icons";
+
 const THEMES = [
   { border: "border-amber-500/20", bg: "bg-amber-500/[0.03]", hoverBorder: "hover:border-amber-500/40", accent: "amber", gradient: "from-amber-500/10 to-transparent" },
   { border: "border-cyan-500/20", bg: "bg-cyan-500/[0.03]", hoverBorder: "hover:border-cyan-500/40", accent: "cyan", gradient: "from-cyan-500/10 to-transparent" },
@@ -50,9 +52,9 @@ export default function CreativePicker({ directions, onSelect }: {
                 <p className="text-sm text-zinc-400 mb-4 leading-relaxed">{d.concept}</p>
 
                 <div className="space-y-2 text-xs">
-                  <InsightRow icon="💡" label="Big Idea" value={d.big_idea} />
-                  <InsightRow icon="👀" label="Why Watch" value={d.reason_to_watch} />
-                  <InsightRow icon="🪝" label="Hook (first 3s)" value={d.hook_moment} highlight />
+                  <InsightRow icon={Icon.bulb} label="Big Idea" value={d.big_idea} />
+                  <InsightRow icon={Icon.eye} label="Why Watch" value={d.reason_to_watch} />
+                  <InsightRow icon={Icon.sparkle} label="Hook (first 3s)" value={d.hook_moment} highlight />
                 </div>
 
                 <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-zinc-700/30">
@@ -77,7 +79,7 @@ export default function CreativePicker({ directions, onSelect }: {
 function InsightRow({ icon, label, value, highlight }: { icon: string; label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex gap-2">
-      <span className="flex-shrink-0 text-zinc-600">{icon}</span>
+      <SvgIcon d={icon} size={3.5} className="text-zinc-600 mt-0.5" />
       <span className="text-zinc-600 flex-shrink-0">{label}:</span>
       <span className={`${highlight ? "text-amber-400/80 font-medium" : "text-zinc-400"}`}>{value}</span>
     </div>
