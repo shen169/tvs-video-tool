@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -20,7 +20,7 @@ export default function TaskPage() {
       if (!mounted.current) return;
       setTask(data);
       if (data.stage === "done" || data.stage === "failed") return;
-      if (!["style_wait", "creative_wait", "preview_wait"].includes(data.stage)) {
+      if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
         const interval = data.stage === "video_gen" ? 5000 : 2000;
         pollTimer.current = setTimeout(() => poll(), interval);
       }
@@ -54,6 +54,15 @@ export default function TaskPage() {
       if (mounted.current) {
         setTask((p: any) => ({ ...p, stage: "video_gen" }));
         setTimeout(() => { if (mounted.current) poll(); }, 1000);
+      }
+    } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
+  };
+  const handleConfirmRecommend = async (creative: any, style: any) => {
+    try {
+      await confirmRecommend(taskId, creative, style);
+      if (mounted.current) {
+        setTask((p: any) => ({ ...p, stage: "script_gen" }));
+        setTimeout(() => { if (mounted.current) poll(); }, 500);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
   };
@@ -122,7 +131,9 @@ export default function TaskPage() {
       {/* Stage Content */}
       <TaskStage task={task} taskId={taskId} onRefresh={poll}
         onSelectCreative={handleSelectCreative}
-        onSelectStyle={handleSelectStyle} onConfirmStoryboard={handleConfirmStoryboard} />
+        onSelectStyle={handleSelectStyle}
+        onConfirmStoryboard={handleConfirmStoryboard}
+        onConfirmRecommend={handleConfirmRecommend} />
     </div>
   );
 }

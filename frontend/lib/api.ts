@@ -74,6 +74,14 @@ export async function confirmStoryboard(taskId: string) {
   });
 }
 
+export async function confirmRecommend(taskId: string, creative: any, style: any) {
+  return request(`${BASE}/tasks/${taskId}/confirm-recommend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ creative, style }),
+  });
+}
+
 export async function rollbackTask(taskId: string, stage: string) {
   return request(`${BASE}/tasks/${taskId}/rollback`, {
     method: "POST",

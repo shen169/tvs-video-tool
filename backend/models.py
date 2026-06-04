@@ -7,8 +7,9 @@ class TaskStage(str, Enum):
     PENDING = "pending"
     FETCHING = "fetching"
     REF_IMAGE = "ref_image"
-    CREATIVE_WAIT = "creative_wait"
-    STYLE_WAIT = "style_wait"
+    CREATIVE_WAIT = "creative_wait"       # deprecated — replaced by RECOMMEND_WAIT
+    STYLE_WAIT = "style_wait"             # deprecated — replaced by RECOMMEND_WAIT
+    RECOMMEND_WAIT = "recommend_wait"     # AI 智能推荐（8 维度一键确认）
     SCRIPT_GEN = "script_gen"
     PREVIEW_WAIT = "preview_wait"
     VIDEO_GEN = "video_gen"
@@ -54,8 +55,9 @@ class TaskState(BaseModel):
     product_info: Optional[dict] = None
     ref_image_url: Optional[str] = None
     uploaded_ref_image: Optional[str] = None
-    style_options: Optional[list[dict]] = None
-    creative_directions: Optional[list[dict]] = None
+    recommendation: Optional[dict] = None           # AI 8维度推荐
+    style_options: Optional[list[dict]] = None       # deprecated
+    creative_directions: Optional[list[dict]] = None # deprecated
     creative_direction: Optional[dict] = None
     selected_style: Optional[StyleChoice] = None
     scripts: Optional[dict[str, list[ShotItem]]] = None

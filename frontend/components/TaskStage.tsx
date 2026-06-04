@@ -3,23 +3,25 @@ import { useState, useRef } from "react";
 import ProductAnalysis from "./ProductAnalysis";
 import CreativePicker from "./CreativePicker";
 import StylePicker from "./StylePicker";
+import RecommendationCard from "./RecommendationCard";
 import StoryboardGallery from "./StoryboardGallery";
 import VideoResult from "./VideoResult";
 import { Icon, SvgIcon } from "./Icons";
 import { regenerateRefImage, uploadRefImage } from "@/lib/api";
 
 export default function TaskStage({
-  task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onRefresh,
+  task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onConfirmRecommend, onRefresh,
 }: {
   task: any;
   taskId: string;
   onSelectCreative: (d: any) => void;
   onSelectStyle: (s: any) => void;
   onConfirmStoryboard: () => void;
+  onConfirmRecommend: (creative: any, style: any) => void;
   onRefresh: () => void;
 }) {
   const { stage, product_info, ref_image_url, uploaded_ref_image,
-    creative_directions, style_options, scripts, preview_images, video_urls, error } = task;
+    creative_directions, style_options, recommendation, scripts, preview_images, video_urls, error } = task;
   const [storyboardTab, setStoryboardTab] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -122,6 +124,7 @@ export default function TaskStage({
         );
 
       case "creative_wait":
+        // Backward compat: old tasks still at creative_wait
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
@@ -133,12 +136,24 @@ export default function TaskStage({
         );
 
       case "style_wait":
+        // Backward compat: old tasks still at style_wait
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
             {RefImageCard}
             {style_options
               ? <StylePicker options={style_options} onSelect={onSelectStyle} />
+              : <Skeleton />}
+          </div>
+        );
+
+      case "recommend_wait":
+        return (
+          <div className="space-y-6 animate-in animate-in-1">
+            {showProduct && <ProductAnalysis info={product_info} collapsed />}
+            {RefImageCard}
+            {recommendation
+              ? <RecommendationCard recommendation={recommendation} onConfirm={onConfirmRecommend} />
               : <Skeleton />}
           </div>
         );

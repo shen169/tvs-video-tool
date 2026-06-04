@@ -33,11 +33,12 @@ async def run_pipeline(task_id: str, store: InMemoryTaskStore):
         style_options = await generate_style_options(product_info)
         store.update(task_id, style_options=style_options)
 
-        logger.info(f"[{task_id}] Stage 2.5: Generating creative directions")
-        from .stage2_creative import generate_creative_directions
-        creative_directions = await generate_creative_directions(product_info)
-        store.update(task_id, creative_directions=creative_directions, stage=TaskStage.CREATIVE_WAIT)
-        logger.info(f"[{task_id}] Pipeline waiting for creative direction selection")
+        logger.info(f"[{task_id}] Stage 2.5: Generating AI recommendation")
+        platforms_list = [p.value for p in task.platforms]
+        from .stage25_recommend import generate_recommendation
+        recommendation = await generate_recommendation(product_info, platforms_list)
+        store.update(task_id, recommendation=recommendation, stage=TaskStage.RECOMMEND_WAIT)
+        logger.info(f"[{task_id}] Recommendation: {recommendation.get('video_type', '?')}")
 
     except Exception as e:
         logger.error(f"[{task_id}] Pipeline error: {e}")
@@ -45,23 +46,24 @@ async def run_pipeline(task_id: str, store: InMemoryTaskStore):
 
 
 async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
-    """Stage 4：风格选择后生成脚本分镜"""
+    """用户确认推荐后 → 生成脚本分镜"""
     try:
         task = store.get(task_id)
         if not task:
             logger.error(f"[{task_id}] Task not found")
             return
-        logger.info(f"[{task_id}] Stage 4: Generating scripts")
+        logger.info(f"[{task_id}] Generating scripts")
         store.update(task_id, stage=TaskStage.SCRIPT_GEN)
         platforms = [p.value for p in task.platforms]
         from .stage4_script import generate_all_scripts
+        style = (task.selected_style.model_dump() if task.selected_style else {})
         scripts = await generate_all_scripts(
             task.product_info, platforms,
-            task.selected_style.model_dump(),
-            task.creative_direction  # 传入创意方向
+            style,
+            task.creative_direction
         )
         store.update(task_id, scripts=scripts, stage=TaskStage.PREVIEW_WAIT)
-        logger.info(f"[{task_id}] Stage 4 complete, waiting for storyboard confirmation")
+        logger.info(f"[{task_id}] Scripts complete, waiting for storyboard confirmation")
     except Exception as e:
         logger.error(f"[{task_id}] Pipeline error at script gen: {e}")
         store.update(task_id, stage=TaskStage.FAILED, error=str(e)[:500])

@@ -81,6 +81,30 @@ async def select_creative(task_id: str, creative_data: dict):
     return {"task_id": task_id, "stage": TaskStage.STYLE_WAIT.value}
 
 
+@router.post("/tasks/{task_id}/confirm-recommend")
+async def confirm_recommend(task_id: str, data: dict):
+    """用户确认 AI 推荐（或手动调整后），触发脚本生成。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.RECOMMEND_WAIT:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'recommend_wait'")
+    creative = data.get("creative", {})
+    style = data.get("style", {})
+    if not creative or not style:
+        raise HTTPException(status_code=422, detail="Missing 'creative' or 'style' field")
+    from .models import StyleChoice
+    try:
+        selected = StyleChoice(**{k: style.get(k, "") for k in ["visual_style", "camera", "lighting", "angle", "human"]})
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid style data")
+    store.update(task_id, creative_direction=creative, selected_style=selected, stage=TaskStage.SCRIPT_GEN)
+    from .pipeline.runner import continue_pipeline
+    import asyncio as _asyncio
+    _asyncio.create_task(continue_pipeline(task_id, store))
+    return {"task_id": task_id, "stage": TaskStage.SCRIPT_GEN.value}
+
+
 @router.post("/tasks/{task_id}/style")
 async def select_style(task_id: str, style_data: dict):
     task = store.get(task_id)
@@ -132,6 +156,7 @@ async def rollback_task(task_id: str, data: dict):
         TaskStage.REF_IMAGE,
         TaskStage.CREATIVE_WAIT,
         TaskStage.STYLE_WAIT,
+        TaskStage.RECOMMEND_WAIT,
         TaskStage.SCRIPT_GEN,
         TaskStage.PREVIEW_WAIT,
         TaskStage.VIDEO_GEN,
@@ -151,10 +176,11 @@ async def rollback_task(task_id: str, data: dict):
 
     # 清除下游数据
     clear_map: dict[int, list[str]] = {
-        stage_idx[TaskStage.FETCHING]:     ["product_info", "ref_image_url", "creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
-        stage_idx[TaskStage.REF_IMAGE]:    ["creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
-        stage_idx[TaskStage.CREATIVE_WAIT]: ["creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
-        stage_idx[TaskStage.STYLE_WAIT]:   ["selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.FETCHING]:     ["product_info", "ref_image_url", "recommendation", "creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.REF_IMAGE]:    ["recommendation", "creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.CREATIVE_WAIT]: ["recommendation", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.STYLE_WAIT]:   ["recommendation", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.RECOMMEND_WAIT]: ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.SCRIPT_GEN]:   ["scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.PREVIEW_WAIT]: ["preview_images", "video_urls"],
         stage_idx[TaskStage.VIDEO_GEN]:    ["video_urls"],
@@ -172,6 +198,18 @@ async def rollback_task(task_id: str, data: dict):
         from .pipeline.runner import run_pipeline
         import asyncio as _asyncio
         _asyncio.create_task(run_pipeline(task_id, store))
+    elif target == TaskStage.RECOMMEND_WAIT:
+        from .pipeline.stage25_recommend import generate_recommendation
+        import asyncio as _asyncio
+        async def _regen_rec():
+            try:
+                t = store.get(task_id)
+                if t:
+                    rec = await generate_recommendation(t.product_info, [p.value for p in t.platforms])
+                    store.update(task_id, recommendation=rec)
+            except Exception as e:
+                store.update(task_id, error=f"Recommendation regen failed: {str(e)[:200]}")
+        _asyncio.create_task(_regen_rec())
     elif target == TaskStage.SCRIPT_GEN:
         from .pipeline.runner import continue_pipeline
         import asyncio as _asyncio
