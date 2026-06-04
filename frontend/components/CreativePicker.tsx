@@ -28,19 +28,17 @@ export default function CreativePicker({ directions, onSelect }: {
           const theme = THEMES[i % 3];
           const col = ACCENT_COLORS[theme.accent] || "text-zinc-400";
           return (
-            <button key={d.id} onClick={() => onSelect(d)}
-              className={`group p-5 rounded-2xl border text-left transition-all duration-300 card-lift ${theme.border} ${theme.bg} ${theme.hoverBorder}`}
+            <button key={i} onClick={() => onSelect(d)}
+              className={`relative group p-5 rounded-2xl border text-left transition-all duration-300 card-lift ${theme.border} ${theme.bg} ${theme.hoverBorder}`}
             >
-              {/* Top gradient */}
-              <div className={`absolute inset-0 rounded-2xl bg-gradient-to-b ${theme.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none`} style={{ position: 'relative' } as any}>
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-b" style={{ backgroundImage: `linear-gradient(to bottom, ${theme.accent === 'amber' ? 'rgba(245,158,11,0.08)' : theme.accent === 'cyan' ? 'rgba(6,182,212,0.08)' : 'rgba(139,92,246,0.08)'}, transparent)` }} />
-              </div>
+              {/* Top gradient overlay */}
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-amber-500/[0.06] via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
               <div className="relative z-10">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1 block">
-                      Direction {d.id.toUpperCase()}
+                      Direction {(d.id || "?").toUpperCase()}
                     </span>
                     <h3 className={`font-bold text-base transition-colors ${col}`}>{d.title}</h3>
                   </div>

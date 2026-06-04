@@ -38,6 +38,29 @@ async def upload_ref_image(task_id: str, file: UploadFile = File(...)):
     return {"task_id": task_id, "ref_image_path": path}
 
 
+@router.post("/tasks/{task_id}/regenerate-ref-image")
+async def regenerate_ref_image(task_id: str):
+    """重新生成参考图（清除旧的，重新调用 Seedream）。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    # 清除旧参考图，重新生成
+    store.update(task_id, ref_image_url=None, uploaded_ref_image=None)
+    from .pipeline.stage2_image import generate_ref_image as _gen_ref
+    import asyncio as _asyncio
+
+    async def _regen():
+        try:
+            task_dict = store.get(task_id).model_dump()
+            ref = await _gen_ref(task_dict)
+            store.update(task_id, ref_image_url=ref)
+        except Exception as e:
+            store.update(task_id, ref_image_url=f"__AI_GEN_ERROR__:{str(e)[:200]}")
+
+    _asyncio.create_task(_regen())
+    return {"task_id": task_id, "message": "Reference image regeneration started"}
+
+
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str):
     task = store.get(task_id)
@@ -83,6 +106,82 @@ async def list_tasks():
     tasks = store.list_all()
     tasks.sort(key=lambda t: t.task_id, reverse=True)
     return [{"task_id": t.task_id, "stage": t.stage.value, "product_info": t.product_info} for t in tasks[:50]]
+
+
+@router.post("/tasks/{task_id}/rollback")
+async def rollback_task(task_id: str, data: dict):
+    """回退到之前的阶段，清除下游数据。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+
+    target_stage = data.get("stage")
+    if not target_stage:
+        raise HTTPException(status_code=422, detail="Missing 'stage' field")
+
+    # 验证 target_stage 是有效的阶段
+    try:
+        target = TaskStage(target_stage)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid stage: {target_stage}")
+
+    # 阶段顺序索引（越大越靠后）
+    STAGE_ORDER = [
+        TaskStage.PENDING,
+        TaskStage.FETCHING,
+        TaskStage.REF_IMAGE,
+        TaskStage.CREATIVE_WAIT,
+        TaskStage.STYLE_WAIT,
+        TaskStage.SCRIPT_GEN,
+        TaskStage.PREVIEW_WAIT,
+        TaskStage.VIDEO_GEN,
+        TaskStage.DONE,
+        TaskStage.FAILED,
+    ]
+    stage_idx = {s: i for i, s in enumerate(STAGE_ORDER)}
+
+    current_idx = stage_idx.get(task.stage, 0)
+    target_idx = stage_idx.get(target, 0)
+
+    if target_idx >= current_idx:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot rollback from '{task.stage.value}' to '{target.value}' — target must be before current stage",
+        )
+
+    # 清除下游数据
+    clear_map: dict[int, list[str]] = {
+        stage_idx[TaskStage.FETCHING]:     ["product_info", "ref_image_url", "creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.REF_IMAGE]:    ["creative_directions", "creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.CREATIVE_WAIT]: ["creative_direction", "style_options", "selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.STYLE_WAIT]:   ["selected_style", "scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.SCRIPT_GEN]:   ["scripts", "preview_images", "video_urls"],
+        stage_idx[TaskStage.PREVIEW_WAIT]: ["preview_images", "video_urls"],
+        stage_idx[TaskStage.VIDEO_GEN]:    ["video_urls"],
+    }
+
+    update_kwargs = {"stage": target}
+    for idx in range(target_idx, len(STAGE_ORDER)):
+        for field in clear_map.get(idx, []):
+            update_kwargs[field] = None
+
+    store.update(task_id, **update_kwargs)
+
+    # 对于自动生成阶段，重新触发管线
+    if target in (TaskStage.FETCHING, TaskStage.REF_IMAGE):
+        from .pipeline.runner import run_pipeline
+        import asyncio as _asyncio
+        _asyncio.create_task(run_pipeline(task_id, store))
+    elif target == TaskStage.SCRIPT_GEN:
+        from .pipeline.runner import continue_pipeline
+        import asyncio as _asyncio
+        _asyncio.create_task(continue_pipeline(task_id, store))
+    elif target == TaskStage.VIDEO_GEN:
+        from .pipeline.runner import run_stage5_and_6
+        import asyncio as _asyncio
+        _asyncio.create_task(run_stage5_and_6(task_id, store))
+
+    return {"task_id": task_id, "stage": target.value}
 
 
 @router.post("/tasks/{task_id}/storyboard")

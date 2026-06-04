@@ -55,8 +55,13 @@ class FileTaskStore(InMemoryTaskStore):
     def _save(self, task_id: str):
         task = self._tasks.get(task_id)
         if task:
-            with open(self._task_path(task_id), "w") as f:
+            import tempfile, os as _os
+            path = self._task_path(task_id)
+            # Atomic write: write to temp file, then rename (prevents corruption on crash)
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
                 json.dump(task.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+            _os.replace(tmp, path)
 
     def _load_all(self):
         for filename in os.listdir(self.storage_dir):

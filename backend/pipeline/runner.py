@@ -68,7 +68,7 @@ async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
 
 
 async def run_stage5_and_6(task_id: str, store: InMemoryTaskStore):
-    """Stage 5-6：生成预览图 + 调用 Seedance 生成视频"""
+    """Stage 5-6：并行生成所有平台预览图 + 调用 Seedance 生成视频"""
     try:
         task = store.get(task_id)
         if not task:
@@ -77,15 +77,23 @@ async def run_stage5_and_6(task_id: str, store: InMemoryTaskStore):
         task_dict = task.model_dump()
         platforms = [p.value for p in task.platforms]
 
-        logger.info(f"[{task_id}] Stage 5: Generating preview images")
+        logger.info(f"[{task_id}] Stage 5: Generating preview images for {len(platforms)} platforms")
+
+        # 并行生成所有平台的预览图（每平台内 6 个 shot 也并行）
         from .stage5_preview import generate_preview_images
-        previews = {}
-        for plat in platforms:
+        previews: dict[str, list[str]] = {}
+
+        async def _gen_platform(plat: str):
             previews[plat] = await generate_preview_images(task_dict, plat)
-        store.update(task_id, preview_images=previews)
+            # 每个平台完成后立即保存，让前端看到进度
+            store.update(task_id, preview_images=dict(previews))
+            logger.info(f"[{task_id}] {plat} previews saved ({len(previews[plat])} shots)")
+
+        await asyncio.gather(*[_gen_platform(plat) for plat in platforms])
 
         logger.info(f"[{task_id}] Stage 6: Generating videos via Seedance")
-        store.update(task_id, stage=TaskStage.VIDEO_GEN)
+        # Preview images already saved above; set stage to video_gen now
+        store.update(task_id, stage=TaskStage.VIDEO_GEN, preview_images=previews)
         from .stage6_video import generate_all_videos
         videos = await generate_all_videos(task_dict, platforms)
         store.update(task_id, video_urls=videos, stage=TaskStage.DONE)

@@ -416,12 +416,12 @@ def _build_analysis_prompt(retrieved: dict, url: str) -> str:
     return "\n".join(parts)
 
 
-ANALYSIS_USER_PROMPT = """Analyze this product and return a JSON object for video ad creation.
+ANALYSIS_USER_PROMPT_TEMPLATE = """Analyze this product and return a JSON object for video ad creation.
 
-{retrieved_data}
+___RETRIEVED_DATA___
 
 Return this EXACT JSON structure (fill every field, use empty string/list if truly unknown):
-{{
+{
   "product_name": "Clean, short product name (max 8 words, remove brand if redundant)",
   "brand": "Brand name",
   "category_tree": ["Level1", "Level2", "Level3"],
@@ -433,7 +433,7 @@ Return this EXACT JSON structure (fill every field, use empty string/list if tru
   "unique_selling_points": ["What makes this different/better 1", "USP 2", "USP 3"],
   "product_description": "A compelling 2-3 sentence summary for video voiceover intro",
   "video_hook_angles": ["Short hook opener 1 (under 15 words)", "hook 2 (under 15 words)", "hook 3 (under 15 words)", "hook 4 (under 15 words)"]
-}}
+}
 
 CRITICAL:
 - video_hook_angles MUST be short (< 15 words each). Think TikTok hooks: "Back pain ruining your day?", "No wires. No pills. Just relief."
@@ -527,7 +527,7 @@ async def _analyze_with_ai(retrieved: dict, url: str) -> dict | None:
     把检索到的产品原始数据发给 DeepSeek/Anthropic，产出创意分析。
     """
     retrieved_text = _build_analysis_prompt(retrieved, url)
-    full_prompt = ANALYSIS_USER_PROMPT.format(retrieved_data=retrieved_text)
+    full_prompt = ANALYSIS_USER_PROMPT_TEMPLATE.replace("___RETRIEVED_DATA___", retrieved_text)
 
     # 优先 Anthropic，fallback DeepSeek
     raw = await _call_anthropic(full_prompt)
@@ -561,6 +561,18 @@ async def _analyze_with_ai(retrieved: dict, url: str) -> dict | None:
 
 def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
     """把检索数据 + AI 分析合并为最终输出。"""
+    # 辅助：确保字段是列表
+    def _as_list(val, default=None):
+        if default is None:
+            default = []
+        if val is None:
+            return default
+        if isinstance(val, str):
+            return [val] if val.strip() else default
+        if isinstance(val, list):
+            return [str(v).strip() for v in val if str(v).strip()]
+        return default
+
     result = {
         # ── 兼容旧字段 ──
         "title": (ai_data.get("product_name") if ai_data else "") or retrieved.get("title", url),
@@ -569,14 +581,14 @@ def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
         "images": retrieved.get("images", []),
         "category_hints": (ai_data.get("category_tree") if ai_data else []) or retrieved.get("category", []),
         "url": url,
-        # ── AI 新增字段 ──
+        # ── AI 新增字段（强制标准化为列表） ──
         "brand": (ai_data.get("brand") if ai_data else "") or "",
-        "key_features": (ai_data.get("key_features") if ai_data else []) or retrieved.get("features", []),
-        "target_audience": ai_data.get("target_audience", []) if ai_data else [],
-        "pain_points": ai_data.get("pain_points", []) if ai_data else [],
-        "use_scenarios": ai_data.get("use_scenarios", []) if ai_data else [],
-        "unique_selling_points": ai_data.get("unique_selling_points", []) if ai_data else [],
-        "video_hook_angles": ai_data.get("video_hook_angles", []) if ai_data else [],
+        "key_features": _as_list(ai_data.get("key_features") if ai_data else None) or retrieved.get("features", []),
+        "target_audience": _as_list(ai_data.get("target_audience") if ai_data else None),
+        "pain_points": _as_list(ai_data.get("pain_points") if ai_data else None),
+        "use_scenarios": _as_list(ai_data.get("use_scenarios") if ai_data else None),
+        "unique_selling_points": _as_list(ai_data.get("unique_selling_points") if ai_data else None),
+        "video_hook_angles": _as_list(ai_data.get("video_hook_angles") if ai_data else None),
         "product_summary": (ai_data.get("product_description") if ai_data else "") or "",
         # ── 元数据 ──
         "ai_analyzed": ai_data is not None,

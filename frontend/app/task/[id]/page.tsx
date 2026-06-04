@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -10,18 +10,33 @@ export default function TaskPage() {
   const taskId = params.id as string;
   const [task, setTask] = useState<any>(null);
   const [error, setError] = useState("");
+  const [rollbackPending, setRollbackPending] = useState(false);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
 
   const poll = useCallback(async () => {
     try {
       const data = await getTask(taskId);
+      if (!mounted.current) return;
       setTask(data);
       if (data.stage === "done" || data.stage === "failed") return;
       if (!["style_wait", "creative_wait", "preview_wait"].includes(data.stage)) {
         const interval = data.stage === "video_gen" ? 5000 : 2000;
-        setTimeout(() => poll(), interval);
+        pollTimer.current = setTimeout(() => poll(), interval);
       }
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) {
+      if (mounted.current) setError(e?.message || String(e));
+    }
   }, [taskId]);
+
+  useEffect(() => {
+    mounted.current = true;
+    poll();
+    return () => {
+      mounted.current = false;
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
+  }, [poll]);
 
   useEffect(() => { poll(); }, [poll]);
 
@@ -34,8 +49,22 @@ export default function TaskPage() {
     catch (e: any) { setError(e.message); }
   };
   const handleConfirmStoryboard = async () => {
-    try { await confirmStoryboard(taskId); setTask((p: any) => ({ ...p, stage: "video_gen" })); setTimeout(() => poll(), 1000); }
-    catch (e: any) { setError(e.message); }
+    try {
+      await confirmStoryboard(taskId);
+      if (mounted.current) {
+        setTask((p: any) => ({ ...p, stage: "video_gen" }));
+        setTimeout(() => { if (mounted.current) poll(); }, 1000);
+      }
+    } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
+  };
+  const handleRollback = async (stageKey: string) => {
+    try {
+      setRollbackPending(true);
+      setError("");
+      await rollbackTask(taskId, stageKey);
+      setTask((p: any) => ({ ...p, stage: stageKey, scripts: null, preview_images: null, video_urls: null }));
+      setTimeout(() => { poll(); setRollbackPending(false); }, 500);
+    } catch (e: any) { setError(e.message); setRollbackPending(false); }
   };
 
   if (!task) return (
@@ -64,10 +93,18 @@ export default function TaskPage() {
             )}
           </div>
         </div>
-        <a href="/" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1">
-          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5m0 0 7 7m-7-7 7-7"/></svg>
-          Back
-        </a>
+        <div className="flex items-center gap-3">
+          {rollbackPending && (
+            <span className="text-[10px] text-amber-400/70 flex items-center gap-1.5">
+              <div className="w-3 h-3 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+              Rolling back...
+            </span>
+          )}
+          <a href="/" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1">
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5m0 0 7 7m-7-7 7-7"/></svg>
+            Back
+          </a>
+        </div>
       </div>
 
       {/* Error */}
@@ -79,11 +116,12 @@ export default function TaskPage() {
 
       {/* Pipeline */}
       <div className="mb-8 p-5 rounded-2xl bg-[#121214] border border-[#27272c] animate-in animate-in-2">
-        <PipelineProgress stage={task.stage} />
+        <PipelineProgress stage={task.stage} onRollback={handleRollback} />
       </div>
 
       {/* Stage Content */}
-      <TaskStage task={task} onSelectCreative={handleSelectCreative}
+      <TaskStage task={task} taskId={taskId} onRefresh={poll}
+        onSelectCreative={handleSelectCreative}
         onSelectStyle={handleSelectStyle} onConfirmStoryboard={handleConfirmStoryboard} />
     </div>
   );

@@ -132,7 +132,11 @@ async def generate_video(task: dict, platform: str) -> str:
 
 
 async def generate_all_videos(task: dict, platforms: list[str]) -> dict[str, str]:
-    videos = {}
-    for plat in platforms:
-        videos[plat] = await generate_video(task, plat)
-    return videos
+    """并行生成所有平台的视频。"""
+    import asyncio as _asyncio
+
+    async def _gen_one(plat: str) -> tuple[str, str]:
+        return plat, await generate_video(task, plat)
+
+    results = await _asyncio.gather(*[_gen_one(plat) for plat in platforms])
+    return {plat: url for plat, url in results}

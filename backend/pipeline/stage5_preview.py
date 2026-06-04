@@ -81,19 +81,22 @@ def _build_preview_prompt(shot: dict, style: dict, continuity: str,
 
 
 async def generate_preview_images(task: dict, platform: str) -> list[str]:
-    """为指定平台的所有分镜生成预览图（或 prompt）。"""
+    """为指定平台的所有分镜并行生成预览图（或 prompt）。"""
     scripts = task.get("scripts", {}).get(platform, [])
     style = task.get("selected_style", {})
     product_info = task.get("product_info", {})
     continuity = scripts[0].get("continuity_anchor", "") if scripts else ""
 
-    previews = []
-    for shot in scripts:
+    # 并行生成所有分镜的预览图（大大加速！）
+    import asyncio
+
+    async def _gen_one(shot: dict) -> str:
         prompt = _build_preview_prompt(shot, style, continuity, product_info)
-        url = await _generate_preview_image(prompt)
-        previews.append(url)
+        return await _generate_preview_image(prompt)
+
+    previews = await asyncio.gather(*[_gen_one(shot) for shot in scripts])
 
     img_count = sum(1 for p in previews if p.startswith("http"))
     logger.info(f"[{platform}] {len(previews)} previews ({img_count} images, "
                 f"{len(previews) - img_count} prompts)")
-    return previews
+    return list(previews)

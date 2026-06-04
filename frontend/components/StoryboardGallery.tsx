@@ -2,12 +2,13 @@
 import { Icon, SvgIcon } from "./Icons";
 
 export default function StoryboardGallery({
-  scripts, previewImages, platform, onConfirm,
+  scripts, previewImages, platform, onConfirm, isGenerating,
 }: {
   scripts: Record<string, any[]>;
   previewImages?: Record<string, string[]>;
   platform: string;
   onConfirm: () => void;
+  isGenerating?: boolean;
 }) {
   const shots = scripts?.[platform] || [];
   const previews = previewImages?.[platform] || [];
@@ -34,9 +35,15 @@ export default function StoryboardGallery({
                 {hasImage ? (
                   <>
                     <img src={previewUrl} alt={`Shot ${i + 1}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                   </>
+                ) : isGenerating ? (
+                  <div className="flex flex-col items-center gap-2.5">
+                    <div className="w-6 h-6 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+                    <span className="text-[10px] text-zinc-500 font-medium">Generating preview...</span>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3">
                     <span className="text-5xl font-bold text-zinc-800 group-hover:text-amber-900/60 transition-colors">
@@ -80,7 +87,7 @@ export default function StoryboardGallery({
       </div>
 
       <button onClick={onConfirm}
-        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
+        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
         ✦ Confirm & Generate Video
       </button>
     </div>

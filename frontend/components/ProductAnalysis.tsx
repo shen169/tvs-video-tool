@@ -20,7 +20,8 @@ export default function ProductAnalysis({ info, collapsed }: { info: Record<stri
         style={{ cursor: collapsed ? "pointer" : "default" }}>
         <div className="flex items-start gap-4 min-w-0">
           {info.images?.[0] && (
-            <img src={info.images[0]} className="w-16 h-16 rounded-xl object-cover border border-[#27272c] flex-shrink-0" />
+            <img src={info.images[0]} className="w-16 h-16 rounded-xl object-cover border border-[#27272c] flex-shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">

@@ -73,3 +73,19 @@ export async function confirmStoryboard(taskId: string) {
     body: JSON.stringify({ approved: true }),
   });
 }
+
+export async function rollbackTask(taskId: string, stage: string) {
+  return request(`${BASE}/tasks/${taskId}/rollback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stage }),
+  });
+}
+
+export async function regenerateRefImage(taskId: string) {
+  return request(`${BASE}/tasks/${taskId}/regenerate-ref-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}

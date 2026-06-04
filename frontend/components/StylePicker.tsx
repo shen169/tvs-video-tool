@@ -41,7 +41,7 @@ export default function StylePicker({ options, onSelect }: {
                       <span>{DIMENSION_EMOJI[dim]}</span>
                       <span>{DIMENSION_LABELS[dim]}</span>
                     </span>
-                    <span className="text-zinc-400 font-medium capitalize">{String(opt[dim]).replace(/_/g, " ")}</span>
+                    <span className="text-zinc-400 font-medium capitalize">{String(opt[dim] ?? "—").replace(/_/g, " ")}</span>
                   </div>
                 ))}
               </div>

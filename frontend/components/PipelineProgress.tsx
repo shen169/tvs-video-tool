@@ -9,7 +9,7 @@ const STAGES = [
   { key: "done", label: "Complete", icon: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" },
 ];
 
-export default function PipelineProgress({ stage }: { stage: string }) {
+export default function PipelineProgress({ stage, onRollback }: { stage: string; onRollback?: (stageKey: string) => void }) {
   const currentIdx = STAGES.findIndex((s) => s.key === stage);
   const isFailed = stage === "failed";
 
@@ -35,18 +35,24 @@ export default function PipelineProgress({ stage }: { stage: string }) {
 
               {/* Node */}
               <div className={`flex flex-col items-center gap-1.5 flex-shrink-0 ${pending && !current ? "opacity-35" : ""}`}>
-                <div className={`relative w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 ${
-                  done ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" :
-                  current ? "bg-amber-500 text-black border border-amber-500 shadow-lg shadow-amber-500/25 animate-pulse" :
-                  "bg-[#18181b] text-zinc-600 border border-zinc-700/30"
-                }`}>
+                <button
+                  disabled={!done || !onRollback}
+                  onClick={() => done && onRollback?.(s.key)}
+                  title={done && onRollback ? `Click to go back and modify ${s.label}` : undefined}
+                  className={`relative w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 ${
+                    done ? "bg-amber-500/15 text-amber-400 border border-amber-500/20" +
+                      (onRollback ? " cursor-pointer hover:bg-amber-500/25 hover:border-amber-500/40 hover:shadow-md hover:shadow-amber-500/10" : "") :
+                    current ? "bg-amber-500 text-black border border-amber-500 shadow-lg shadow-amber-500/25 animate-pulse" :
+                    "bg-[#18181b] text-zinc-600 border border-zinc-700/30"
+                  }`}
+                >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     {done ? <path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /> : <path d={s.icon} />}
                   </svg>
                   {current && (
                     <div className="absolute -inset-1 rounded-xl bg-amber-500/20 blur-md -z-10" />
                   )}
-                </div>
+                </button>
                 <span className={`text-[10px] font-medium whitespace-nowrap transition-colors ${
                   done ? "text-zinc-300" : current ? "text-amber-400" : "text-zinc-600"
                 }`}>

@@ -19,10 +19,13 @@ export const Icon = {
   download:"M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3",
 };
 
-export function SvgIcon({ d, size = 5, className = "" }: { d: string; size?: number; className?: string }) {
+export function SvgIcon({ d, size = 5, className = "", ...props }: { d: string; size?: number; className?: string; [key: string]: any }) {
+  // Tailwind JIT does not support dynamic class names — use inline style for size
+  const px = `${size * 4}px`;
   return (
-    <svg className={`w-${size} h-${size} ${className} flex-shrink-0`} viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={`${className} flex-shrink-0`} style={{ width: px, height: px }} viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" {...props}>
       <path d={d} />
     </svg>
   );
