@@ -120,16 +120,16 @@ async def _search_with_tavily(url: str, product_hints: str) -> str:
     if not api_key:
         return ""
 
-    # 从 URL 提取产品名作为搜索关键词
+    # 从 URL 提取产品名作为搜索关键词（兼容多种 Amazon URL 格式）
     query_parts = []
+    # 格式1: /dp/ASIN/title-slug
     m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
     if m:
         query_parts.append(m.group(1).replace('-', ' '))
-
-    if not query_parts:
-        parts = url.rstrip('/').split('/')
-        if parts:
-            query_parts.append(parts[-1].replace('-', ' '))
+    # 格式2: /gp/product/ASIN (无产品名，用 ASIN 搜)
+    m = re.search(r'/gp/product/([A-Z0-9]+)', url)
+    if m and not query_parts:
+        query_parts.append(f"Amazon ASIN {m.group(1)} product")
 
     if not query_parts:
         return ""
@@ -245,6 +245,28 @@ def _parse_html_basics(html: str) -> dict:
             "images": images, "category_hints": category_hints[:5]}
 
 
+def _extract_search_hints(url: str) -> str:
+    """从各种 URL 格式中提取产品搜索关键词。"""
+    # /dp/ASIN/title-slug
+    m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
+    if m:
+        return m.group(1).replace('-', ' ')
+    # /gp/product/ASIN
+    m = re.search(r'/gp/product/([A-Z0-9]+)', url)
+    if m:
+        return f"Amazon ASIN {m.group(1)} product"
+    # /product/slug
+    m = re.search(r'/product/([^/?]+)', url)
+    if m:
+        return m.group(1).replace('-', ' ')
+    # generic fallback
+    parts = url.rstrip('/').split('/')
+    for p in reversed(parts):
+        if p and len(p) > 3 and not p.startswith('ref='):
+            return p.replace('-', ' ')
+    return ""
+
+
 async def _retrieve_product_data(url: str) -> dict:
     """
     Layer 1 — 数据检索。
@@ -287,14 +309,24 @@ async def _retrieve_product_data(url: str) -> dict:
                         f"features={len(retrieved['features'])}, "
                         f"images={len(retrieved['images'])}")
 
-    # 3) Tavily 搜索（无论 Apify 成功与否都搜，补充评价/口碑）
-    url_hints = ""
-    if "amazon" in url:
-        m = re.search(r'\.com/([^/]+(?:/[^/]+)*?)/dp/', url)
-        if m:
-            url_hints = m.group(1).replace('-', ' ')
-    elif not retrieved["title"]:
-        url_hints = url.split("/")[-1].replace("-", " ")[:100]
+    # 3) HTTP 优先（真实页面数据，免费且快）
+    html = await _fetch_html(url)
+    basics = _parse_html_basics(html)
+    if basics.get("title"):
+        retrieved.update(basics)
+        retrieved["source"] = "http"
+        logger.info(f"HTTP parsed real product: {basics['title'][:80]}")
+
+    # 4) Tavily 搜索（补充评价、口碑；仅在 HTTP 数据不够时作为主要来源）
+    if not retrieved.get("title") or retrieved["source"] == "none":
+        url_hints = _extract_search_hints(url)
+    else:
+        # 已经有产品名，用精确关键词搜补充信息
+        url_hints = retrieved["title"][:100]
+
+    # 判断 hints 质量：有实际产品名 = good，只有 ASIN 或空 = bad
+    hints_is_good = bool(url_hints and len(url_hints) > 15 and "ASIN" not in url_hints)
+    retrieved["search_hints_quality"] = "good" if hints_is_good else "bad"
 
     search_text = await _search_with_tavily(url, url_hints)
     if search_text:
@@ -302,25 +334,11 @@ async def _retrieve_product_data(url: str) -> dict:
         if retrieved["source"] == "none":
             retrieved["source"] = "tavily"
 
-    # 4) HTTP 兜底
-    if retrieved["source"] == "none":
-        html = await _fetch_html(url)
-        basics = _parse_html_basics(html)
-        if basics.get("title"):
-            retrieved.update(basics)
-            retrieved["source"] = "http"
-
-    # 5) 如果什么都没拿到，用 URL 本身作为线索
+    # 5) 如果什么都没拿到，标记为无法识别
     if not retrieved["title"]:
-        # 从 URL 猜产品名
-        for pattern in [r'\.com/([^/]+)/dp/', r'\.com/([^/]+)/product/',
-                        r'\.com/product/([^/]+)', r'/([^/]+)/dp/']:
-            m = re.search(pattern, url)
-            if m:
-                retrieved["title"] = m.group(1).replace('-', ' ')
-                break
-        if not retrieved["title"]:
-            retrieved["title"] = url.split("/")[-1].replace('-', ' ')[:100]
+        retrieved["title"] = url.split("/")[-1].replace('-', ' ')[:100]
+        if not retrieved["title"] or retrieved["title"] in ("gp", "dp", "product"):
+            retrieved["title"] = ""
 
     # 清理 features（确保是字符串列表）
     if retrieved["features"]:
@@ -601,7 +619,23 @@ async def fetch_product_info(url: str) -> dict:
         }
 
     # ── Layer 2: AI 分析 ──
-    ai_data = await _analyze_with_ai(retrieved, url)
+    # 数据质量门禁：判断是否有足够可靠的信息给 AI 分析
+    # 三类可信数据源：HTTP 真实页面 > Tavily 有产品名的搜索 > 空
+    has_http_title = retrieved.get("source") == "http" and len(retrieved.get("title", "")) > 10
+    has_good_search = (
+        len(retrieved.get("search_context", "")) > 500 and
+        retrieved.get("search_hints_quality") == "good"
+    )
+    has_features = len(retrieved.get("features", [])) > 0
+
+    if has_http_title or has_good_search or has_features:
+        ai_data = await _analyze_with_ai(retrieved, url)
+    else:
+        logger.warning(
+            f"Insufficient data: http_title={has_http_title}, "
+            f"good_search={has_good_search}, features={has_features}"
+        )
+        ai_data = None
 
     # ── 组装 ──
     return _assemble_result(url, retrieved, ai_data)
