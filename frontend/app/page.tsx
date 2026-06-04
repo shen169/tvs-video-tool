@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { createTask } from "@/lib/api";
 
 const PLATFORMS = [
-  { key: "tiktok", label: "TikTok", desc: "9:16 竖屏 · 快节奏" },
-  { key: "amazon", label: "Amazon", desc: "16:9 横屏 · 产品展示" },
-  { key: "youtube", label: "YouTube", desc: "9:16 竖屏 · 信息流" },
-  { key: "instagram", label: "Instagram", desc: "9:16 竖屏 · 视觉驱动" },
+  { key: "tiktok", label: "TikTok", desc: "9:16 · Fast-paced", color: "from-pink-500/10 to-rose-500/5 border-pink-500/15 hover:border-pink-500/30" },
+  { key: "amazon", label: "Amazon", desc: "16:9 · Product showcase", color: "from-amber-500/10 to-orange-500/5 border-amber-500/15 hover:border-amber-500/30" },
+  { key: "youtube", label: "YouTube", desc: "9:16 · Informational", color: "from-red-500/10 to-rose-500/5 border-red-500/15 hover:border-red-500/30" },
+  { key: "instagram", label: "Instagram", desc: "9:16 · Visual-driven", color: "from-violet-500/10 to-purple-500/5 border-violet-500/15 hover:border-violet-500/30" },
 ];
 
 export default function HomePage() {
@@ -26,65 +26,70 @@ export default function HomePage() {
 
   const handleSubmit = async () => {
     if (!url) return;
-    if (platforms.length === 0) {
-      setError("请至少选择一个目标平台");
-      return;
-    }
-    setLoading(true);
-    setError("");
+    if (platforms.length === 0) { setError("Select at least one platform"); return; }
+    setLoading(true); setError("");
     try {
       const { task_id } = await createTask(url, platforms, image || undefined);
       router.push(`/task/${task_id}`);
-    } catch (e: any) {
-      setError(e.message || "创建任务失败");
-      setLoading(false);
-    }
+    } catch (e: any) { setError(e.message || "Failed to create task"); setLoading(false); }
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-10 py-12">
-      {/* Header */}
-      <div className="mb-10">
-        <h1 className="text-2xl font-bold text-zinc-100 tracking-tight">新建带货视频</h1>
-        <p className="text-sm text-zinc-500 mt-1.5">粘贴产品链接，AI 自动生成多平台视频</p>
+    <div className="max-w-3xl mx-auto px-8 py-14">
+      {/* Hero */}
+      <div className="mb-12">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-amber-400/80 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/15">
+            AI-Powered
+          </span>
+        </div>
+        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight leading-tight">
+          Create Product Videos<br />
+          <span className="text-amber-400">in Seconds</span>
+        </h1>
+        <p className="text-sm text-zinc-500 mt-3 max-w-md leading-relaxed">
+          Paste a product link. AI analyzes, writes scripts, generates previews, and produces videos for every platform.
+        </p>
       </div>
 
-      <div className="space-y-8">
-        {/* Product URL */}
+      <div className="space-y-8 animate-in animate-in-1">
+        {/* URL Input */}
         <section>
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3 block">产品链接</label>
+          <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3 block">
+            Product Link
+          </label>
           <div className="relative">
             <input
-              className="w-full h-14 px-5 rounded-xl bg-[#131316] border border-[#1f1f24] text-zinc-100 placeholder-zinc-600 text-sm focus:outline-none focus:border-emerald-600/50 focus:ring-1 focus:ring-emerald-600/20 transition-all"
-              placeholder="粘贴 Amazon / Shopify / 电商链接..."
+              className="w-full h-14 px-5 rounded-2xl bg-[#121214] border border-[#27272c] text-zinc-100 placeholder-zinc-600 text-sm focus:outline-none focus:border-amber-500/40 focus:ring-1 focus:ring-amber-500/10 transition-all duration-300"
+              placeholder="Paste Amazon / Shopify / e-commerce link..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               autoFocus
             />
             <div className="absolute right-4 top-1/2 -translate-y-1/2">
-              <div className={`w-2 h-2 rounded-full ${url ? "bg-emerald-500 pulse-ring" : "bg-zinc-700"}`} />
+              <div className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${url ? "bg-amber-500 pulse-ring" : "bg-zinc-700"}`} />
             </div>
           </div>
         </section>
 
-        {/* Platforms */}
+        {/* Platform Selector */}
         <section>
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3 block">目标平台</label>
+          <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3 block">
+            Target Platforms
+          </label>
           <div className="grid grid-cols-4 gap-3">
             {PLATFORMS.map((p) => {
               const active = platforms.includes(p.key);
               return (
-                <button
-                  key={p.key}
-                  onClick={() => togglePlatform(p.key)}
-                  className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                <button key={p.key} onClick={() => togglePlatform(p.key)}
+                  className={`p-4 rounded-2xl border text-left transition-all duration-300 card-lift ${
                     active
-                      ? "border-emerald-600/40 bg-emerald-600/5 text-zinc-100"
-                      : "border-[#1f1f24] bg-[#131316] text-zinc-500 hover:border-zinc-700 hover:text-zinc-400"
+                      ? `bg-gradient-to-br ${p.color} text-zinc-100`
+                      : "border-[#27272c] bg-[#121214] text-zinc-500 hover:border-zinc-600 hover:text-zinc-400"
                   }`}
                 >
-                  <div className="text-sm font-medium">{p.label}</div>
+                  <div className="text-sm font-semibold">{p.label}</div>
                   <div className="text-[10px] mt-1 opacity-60">{p.desc}</div>
                 </button>
               );
@@ -92,30 +97,26 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Reference Image */}
+        {/* Image Upload */}
         <section>
-          <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3 block">产品参考图 · 可选</label>
-          <label className={`relative flex flex-col items-center justify-center h-32 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 ${
-            image
-              ? "border-emerald-600/50 bg-emerald-600/5"
-              : "border-[#1f1f24] bg-[#131316] hover:border-zinc-600"
+          <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-3 block">
+            Reference Image · <span className="text-zinc-600 font-normal">optional</span>
+          </label>
+          <label className={`relative flex flex-col items-center justify-center h-28 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300 ${
+            image ? "border-amber-500/30 bg-amber-500/[0.02]" : "border-[#27272c] bg-[#121214] hover:border-zinc-600"
           }`}>
-            <input
-              type="file"
-              accept="image/*"
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              onChange={(e) => setImage(e.target.files?.[0] || null)}
-            />
+            <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer"
+              onChange={(e) => setImage(e.target.files?.[0] || null)} />
             {image ? (
               <div className="text-center">
-                <div className="text-emerald-400 font-medium text-sm">{image.name}</div>
-                <div className="text-zinc-600 text-xs mt-1">点击更换</div>
+                <div className="text-amber-400 font-medium text-sm">{image.name}</div>
+                <div className="text-zinc-600 text-xs mt-1">Click to change</div>
               </div>
             ) : (
               <div className="text-center">
-                <div className="text-2xl mb-1 opacity-30">⌘</div>
-                <div className="text-zinc-500 text-sm">拖拽图片到此处 或 点击上传</div>
-                <div className="text-zinc-600 text-xs mt-1">不传则 AI 自动生成白底商品图</div>
+                <div className="text-xl mb-1 opacity-20">⌘</div>
+                <div className="text-zinc-500 text-sm">Drop image or click to upload</div>
+                <div className="text-zinc-600 text-xs mt-1">AI auto-generates if left empty</div>
               </div>
             )}
           </label>
@@ -123,22 +124,19 @@ export default function HomePage() {
 
         {/* Error */}
         {error && (
-          <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/20 text-red-400 text-sm">{error}</div>
+          <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/15 text-red-400 text-sm">{error}</div>
         )}
 
         {/* Submit */}
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !url || platforms.length === 0}
-          className="w-full h-14 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-[#1f1f24] disabled:text-zinc-600 text-white font-semibold text-sm tracking-wide transition-all duration-200 active:scale-[0.99]"
-        >
+        <button onClick={handleSubmit} disabled={loading || !url || platforms.length === 0}
+          className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-[#1c1c20] disabled:to-[#1c1c20] disabled:text-zinc-600 text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
           {loading ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              创建任务中...
+              <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+              Creating task...
             </span>
           ) : (
-            "开始生成视频  ⌘↵"
+            "Generate Video ✦"
           )}
         </button>
       </div>

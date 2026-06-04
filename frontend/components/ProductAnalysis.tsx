@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
 
-export default function ProductAnalysis({ info }: { info: Record<string, any> | null }) {
-  if (!info) return <div className="shimmer h-48 rounded-xl" />;
+export default function ProductAnalysis({ info, collapsed }: { info: Record<string, any> | null; collapsed?: boolean }) {
+  const [open, setOpen] = useState(!collapsed);
+  if (!info) return <div className="shimmer h-48 rounded-2xl" />;
 
   const hasAI = info.ai_analyzed;
   const features = info.key_features || [];
@@ -10,96 +11,59 @@ export default function ProductAnalysis({ info }: { info: Record<string, any> | 
   const pains = info.pain_points || [];
   const scenarios = info.use_scenarios || [];
   const hooks = info.video_hook_angles || [];
-  const source = info.data_source;
 
   return (
-    <div className="space-y-5">
+    <div className="rounded-2xl bg-[#121214] border border-[#27272c] p-6 grain animate-in animate-in-1">
       {/* Header */}
-      <div className="flex items-start gap-4">
-        {info.images?.[0] && (
-          <img src={info.images[0]} alt="" className="w-20 h-20 rounded-xl object-cover border border-[#1f1f24] flex-shrink-0" />
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-zinc-200 text-lg leading-tight">{info.title || "产品分析"}</h3>
-            {hasAI && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 flex-shrink-0">
-                AI 分析
-              </span>
-            )}
-          </div>
-          {info.price && <span className="text-xl font-bold text-emerald-400">{info.price}</span>}
-          {source && source !== "none" && (
-            <span className="text-[10px] text-zinc-600 ml-2">via {source}</span>
+      <div className="flex items-start justify-between mb-5" onClick={collapsed ? () => setOpen(!open) : undefined}
+        style={{ cursor: collapsed ? "pointer" : "default" }}>
+        <div className="flex items-start gap-4 min-w-0">
+          {info.images?.[0] && (
+            <img src={info.images[0]} className="w-16 h-16 rounded-xl object-cover border border-[#27272c] flex-shrink-0" />
           )}
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-semibold text-zinc-100 text-base leading-snug">{info.title || "Product"}</h3>
+              {hasAI && <Badge color="amber">AI Analysis</Badge>}
+              {info.data_source && info.data_source !== "none" && (
+                <Badge color="zinc">{info.data_source}</Badge>
+              )}
+            </div>
+            {info.price && <p className="text-2xl font-bold text-amber-400 mt-1.5">{info.price}</p>}
+          </div>
         </div>
+        {collapsed && <span className="text-zinc-600 text-sm mt-1">{open ? "▲" : "▼"}</span>}
       </div>
 
-      {/* AI Analysis Grid */}
-      {hasAI && features.length > 0 && (
-        <div className="grid grid-cols-2 gap-4">
-          {/* Key Features */}
-          <Section title="🔑 核心卖点" color="emerald">
-            {features.slice(0, 5).map((f: string, i: number) => (
-              <li key={i}>{f}</li>
-            ))}
-          </Section>
-
-          {/* Target Audience */}
-          {audience.length > 0 && (
-            <Section title="👤 目标人群" color="blue">
-              {audience.slice(0, 4).map((a: string, i: number) => (
-                <li key={i}>{a}</li>
-              ))}
-            </Section>
-          )}
-
-          {/* Pain Points */}
-          {pains.length > 0 && (
-            <Section title="💢 用户痛点" color="red">
-              {pains.slice(0, 4).map((p: string, i: number) => (
-                <li key={i}>{p}</li>
-              ))}
-            </Section>
-          )}
-
-          {/* Use Scenarios */}
-          {scenarios.length > 0 && (
-            <Section title="🎬 使用场景" color="purple">
-              {scenarios.slice(0, 4).map((s: string, i: number) => (
-                <li key={i}>{s}</li>
-              ))}
-            </Section>
-          )}
-        </div>
-      )}
-
-      {/* Video Hook Angles */}
-      {hooks.length > 0 && (
-        <div className="p-3 rounded-lg bg-emerald-600/5 border border-emerald-600/10">
-          <p className="text-[10px] text-emerald-400 font-medium uppercase tracking-wider mb-2">🪝 可用视频 Hook</p>
-          <div className="flex flex-wrap gap-1.5">
-            {hooks.map((h: string, i: number) => (
-              <span key={i} className="text-[11px] px-2.5 py-1 rounded-full bg-[#1f1f24] text-zinc-400">
-                {h}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Fallback: old-style display */}
-      {!hasAI && (
+      {(!collapsed || open) && (
         <>
-          {info.description && (
-            <p className="text-sm text-zinc-400 leading-relaxed">{info.description}</p>
-          )}
-          {info.category_hints?.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {info.category_hints.map((c: string) => (
-                <span key={c} className="text-[10px] px-2 py-0.5 rounded-full bg-[#1f1f24] text-zinc-500">{c}</span>
-              ))}
+          {/* AI Grid */}
+          {hasAI && features.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <InsightCard icon="🔑" label="Key Features" color="amber" items={features.slice(0, 5)} />
+              {audience.length > 0 && <InsightCard icon="👤" label="Target Audience" color="cyan" items={audience.slice(0, 4)} />}
+              {pains.length > 0 && <InsightCard icon="💢" label="Pain Points" color="red" items={pains.slice(0, 4)} />}
+              {scenarios.length > 0 && <InsightCard icon="🎬" label="Use Scenarios" color="violet" items={scenarios.slice(0, 4)} />}
             </div>
+          )}
+
+          {/* Hooks */}
+          {hooks.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-amber-500/[0.04] border border-amber-500/10">
+              <p className="text-[10px] text-amber-400/80 font-semibold uppercase tracking-wider mb-2.5">🎯 Video Hook Angles</p>
+              <div className="flex flex-wrap gap-1.5">
+                {hooks.map((h: string, i: number) => (
+                  <span key={i} className="text-[11px] px-2.5 py-1 rounded-lg bg-[#1c1c20] text-zinc-400 border border-zinc-700/30">
+                    {h}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fallback */}
+          {!hasAI && info.description && (
+            <p className="text-sm text-zinc-400 leading-relaxed">{info.description}</p>
           )}
         </>
       )}
@@ -107,26 +71,42 @@ export default function ProductAnalysis({ info }: { info: Record<string, any> | 
   );
 }
 
-function Section({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
-  const borders: Record<string, string> = {
-    emerald: "border-emerald-600/10",
-    blue: "border-blue-600/10",
-    red: "border-red-600/10",
-    purple: "border-purple-600/10",
-  };
-  const texts: Record<string, string> = {
-    emerald: "text-emerald-400",
-    blue: "text-blue-400",
-    red: "text-red-400",
-    purple: "text-purple-400",
+function Badge({ color, children }: { color: string; children: React.ReactNode }) {
+  const colors: Record<string, string> = {
+    amber: "bg-amber-500/10 text-amber-400 border-amber-500/15",
+    cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/15",
+    zinc: "bg-zinc-500/10 text-zinc-400 border-zinc-500/10",
   };
   return (
-    <div className={`p-3 rounded-lg bg-[#131316] border ${borders[color] || "border-[#1f1f24]"}`}>
-      <p className={`text-[10px] font-medium uppercase tracking-wider mb-2 ${texts[color] || "text-zinc-400"}`}>
-        {title}
+    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${colors[color] || colors.zinc}`}>
+      {children}
+    </span>
+  );
+}
+
+function InsightCard({ icon, label, color, items }: {
+  icon: string; label: string; color: string; items: string[];
+}) {
+  const borders: Record<string, string> = {
+    amber: "border-amber-500/10", cyan: "border-cyan-500/10",
+    red: "border-red-500/10", violet: "border-violet-500/10",
+  };
+  const texts: Record<string, string> = {
+    amber: "text-amber-400", cyan: "text-cyan-400",
+    red: "text-red-400", violet: "text-violet-400",
+  };
+  return (
+    <div className={`p-3.5 rounded-xl bg-[#0d0d0f] border ${borders[color] || "border-zinc-700/20"}`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${texts[color] || "text-zinc-400"}`}>
+        {icon} {label}
       </p>
-      <ul className="space-y-1">
-        {children}
+      <ul className="space-y-1.5">
+        {items.map((item: string, i: number) => (
+          <li key={i} className="text-[11px] text-zinc-400 leading-relaxed flex gap-1.5">
+            <span className="text-zinc-700 flex-shrink-0">·</span>
+            <span>{item}</span>
+          </li>
+        ))}
       </ul>
     </div>
   );

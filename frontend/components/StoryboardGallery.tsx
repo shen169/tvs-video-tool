@@ -1,10 +1,7 @@
 "use client";
 
 export default function StoryboardGallery({
-  scripts,
-  previewImages,
-  platform,
-  onConfirm,
+  scripts, previewImages, platform, onConfirm,
 }: {
   scripts: Record<string, any[]>;
   previewImages?: Record<string, string[]>;
@@ -15,11 +12,11 @@ export default function StoryboardGallery({
   const previews = previewImages?.[platform] || [];
 
   return (
-    <div>
-      <h3 className="text-sm font-semibold text-zinc-200 mb-1">分镜预览 — {platform}</h3>
-      <p className="text-xs text-zinc-500 mb-6">
-        {shots.length} 个镜头 · 确认后开始视频生成
-      </p>
+    <div className="animate-in animate-in-1">
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-zinc-100 capitalize">Storyboard — {platform}</h2>
+        <p className="text-sm text-zinc-500 mt-1">{shots.length} shots · Review and confirm before video generation</p>
+      </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
         {shots.map((shot: any, i: number) => {
@@ -27,49 +24,50 @@ export default function StoryboardGallery({
           const hasImage = previewUrl && (previewUrl.startsWith("http") || previewUrl.startsWith("data:"));
 
           return (
-            <div
-              key={i}
-              className="rounded-xl bg-[#131316] border border-[#1f1f24] overflow-hidden group hover:border-emerald-600/20 transition-all"
+            <div key={i}
+              className="rounded-2xl bg-[#121214] border border-[#27272c] overflow-hidden group card-lift animate-in"
+              style={{ animationDelay: `${i * 0.06}s`, opacity: 0 } as any}
             >
-              {/* Preview Image or Placeholder */}
-              <div className="aspect-[9/16] bg-[#0a0a0c] flex items-center justify-center relative overflow-hidden">
+              {/* Image Area */}
+              <div className="aspect-[9/16] bg-[#0a0a0d] flex items-center justify-center relative overflow-hidden">
                 {hasImage ? (
-                  <img
-                    src={previewUrl}
-                    alt={`Shot ${i + 1}`}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
                   <>
-                    <span className="text-4xl font-bold text-zinc-800 group-hover:text-emerald-900 transition-colors">
+                    <img src={previewUrl} alt={`Shot ${i + 1}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <span className="text-5xl font-bold text-zinc-800 group-hover:text-amber-900/60 transition-colors">
                       {i + 1}
                     </span>
                     {previewUrl && (
-                      <span className="absolute bottom-2 left-2 right-2 text-[9px] text-zinc-600 truncate">
+                      <span className="text-[9px] text-zinc-600 px-2 text-center leading-relaxed max-w-[90%] truncate">
                         {previewUrl.slice(0, 60)}...
                       </span>
                     )}
-                  </>
+                  </div>
                 )}
-                <span className="absolute top-2 left-2 text-[9px] px-1.5 py-0.5 rounded bg-black/60 text-zinc-400">
+
+                {/* Top badges */}
+                <span className="absolute top-2.5 left-2.5 text-[9px] px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-zinc-300 font-medium">
                   {shot.purpose}
                 </span>
-                <span className="absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded bg-black/60 text-zinc-500">
+                <span className="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-sm text-zinc-500 font-mono">
                   {shot.duration}s
                 </span>
               </div>
 
-              {/* Shot Details */}
-              <div className="p-3">
-                <p className="text-xs text-zinc-400 leading-relaxed mb-1.5 line-clamp-2">{shot.scene}</p>
-                <div className="flex items-center justify-between text-[10px] text-zinc-600">
-                  <span>
-                    {shot.shot_type} · {shot.lighting}
-                  </span>
-                  <span>{shot.transition}</span>
+              {/* Details */}
+              <div className="p-3.5">
+                <p className="text-[11px] text-zinc-400 leading-relaxed mb-2 line-clamp-2">{shot.scene}</p>
+                <div className="flex items-center gap-2 text-[10px] text-zinc-600 flex-wrap">
+                  <span className="px-1.5 py-0.5 rounded bg-zinc-800/50">{shot.shot_type}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-zinc-800/50">{shot.lighting}</span>
+                  <span className="text-zinc-700">{shot.transition}</span>
                 </div>
                 {shot.voiceover && (
-                  <p className="text-[10px] text-zinc-500 mt-1.5 italic line-clamp-1">🎤 {shot.voiceover}</p>
+                  <p className="text-[10px] text-zinc-500 mt-2 italic line-clamp-1">🎤 {shot.voiceover}</p>
                 )}
               </div>
             </div>
@@ -77,11 +75,9 @@ export default function StoryboardGallery({
         })}
       </div>
 
-      <button
-        onClick={onConfirm}
-        className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm tracking-wide transition-all duration-200 active:scale-[0.99]"
-      >
-        确认分镜，开始生成视频
+      <button onClick={onConfirm}
+        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
+        ✦ Confirm & Generate Video
       </button>
     </div>
   );
