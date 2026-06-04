@@ -19,6 +19,14 @@ export default function TaskStage({
     creative_directions, style_options, scripts, preview_images, video_urls, error } = task;
   const [storyboardTab, setStoryboardTab] = useState(0);
   const showProduct = product_info && stage !== "pending" && stage !== "fetching";
+  const hasRefImage = ref_image_url && !ref_image_url.startsWith("__");
+
+  // Persistent reference image card (shown in all stages after generation)
+  const RefImageCard = hasRefImage ? (
+    <StageShell icon={Icon.image} title="Reference Image" subtitle="AI-generated product hero shot">
+      <img src={ref_image_url} alt="Product reference" className="w-full max-w-sm rounded-2xl shadow-xl shadow-amber-500/5" />
+    </StageShell>
+  ) : null;
 
   const content = () => {
     switch (stage) {
@@ -47,6 +55,7 @@ export default function TaskStage({
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
+            {RefImageCard}
             {creative_directions
               ? <CreativePicker directions={creative_directions} onSelect={onSelectCreative} />
               : <Skeleton />}
@@ -57,6 +66,7 @@ export default function TaskStage({
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
+            {RefImageCard}
             {style_options
               ? <StylePicker options={style_options} onSelect={onSelectStyle} />
               : <Skeleton />}
@@ -67,6 +77,7 @@ export default function TaskStage({
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
+            {RefImageCard}
             <StageShell icon={Icon.doc} title="Writing Script & Storyboard" subtitle="AI is crafting 6-shot sequences for each platform">
               <div className="flex items-center gap-4 mt-2">
                 <Spinner />
@@ -86,6 +97,7 @@ export default function TaskStage({
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} collapsed />}
+            {RefImageCard}
             {platformKeys.length > 1 && (
               <div className="flex gap-1.5">
                 {platformKeys.map((plat, i) => (
@@ -109,12 +121,28 @@ export default function TaskStage({
       case "video_gen":
         return (
           <div className="space-y-6 animate-in animate-in-1">
-            <StageShell icon={Icon.film} title="Generating Video" subtitle="Seedance 2.0 is rendering your product video">
+            {showProduct && <ProductAnalysis info={product_info} collapsed />}
+            {/* Preview image generation progress */}
+            <StageShell icon={Icon.image} title="Generating Storyboard Previews" subtitle={`Seedream is creating ${scripts ? Object.values(scripts).flat().length : 6} preview images`}>
+              <div className="flex items-center gap-4 mt-2">
+                <Spinner />
+                <div>
+                  <p className="text-sm text-zinc-300">Rendering visual previews for each shot...</p>
+                  <p className="text-xs text-zinc-500 mt-1">~20s per image · This page updates automatically</p>
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-4 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 animate-pulse" style={{ width: "60%" }} />
+              </div>
+            </StageShell>
+            {/* Video generation */}
+            <StageShell icon={Icon.film} title="Video Rendering" subtitle="Seedance 2.0 is producing the final video">
               <div className="flex items-center gap-4 mt-2">
                 <Spinner />
                 <div>
                   <p className="text-sm text-zinc-300">Estimated 2–5 minutes...</p>
-                  <p className="text-xs text-zinc-600 mt-1">This page will update automatically</p>
+                  <p className="text-xs text-zinc-500 mt-1">Combining previews into cinematic video</p>
                 </div>
               </div>
             </StageShell>
