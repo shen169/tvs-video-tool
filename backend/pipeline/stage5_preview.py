@@ -41,8 +41,12 @@ async def _generate_preview_image(prompt: str) -> str:
                 },
             )
             if resp.status_code != 200:
-                logger.warning(f"Seedream preview failed ({resp.status_code}): {resp.text[:200]}")
-                return prompt
+                err_text = resp.text[:300]
+                logger.warning(f"Seedream preview failed ({resp.status_code}): {err_text}")
+                # 检查是否欠费
+                if "AccountOverdueError" in err_text or "overdue" in err_text.lower():
+                    return f"__API_ERROR__:AccountOverdueError"
+                return f"__API_ERROR__:HTTP{resp.status_code}"
 
             data = resp.json()
             images = data.get("data", [])
@@ -82,9 +86,9 @@ def _build_preview_prompt(shot: dict, style: dict, continuity: str,
 
 async def generate_preview_images(task: dict, platform: str) -> list[str]:
     """为指定平台的所有分镜并行生成预览图（或 prompt）。"""
-    scripts = task.get("scripts", {}).get(platform, [])
-    style = task.get("selected_style", {})
-    product_info = task.get("product_info", {})
+    scripts = task.get("scripts", {}).get(platform, []) if task.get("scripts") else []
+    style = task.get("selected_style") or {}
+    product_info = task.get("product_info") or {}
     continuity = scripts[0].get("continuity_anchor", "") if scripts else ""
 
     # 并行生成所有分镜的预览图（大大加速！）

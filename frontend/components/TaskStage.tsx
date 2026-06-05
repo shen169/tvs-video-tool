@@ -226,14 +226,28 @@ export default function TaskStage({
           ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.filter((u: string) => u && u.startsWith("http")).length : 0), 0)
           : 0;
         const allPreviewsDone = previewGot >= previewDone;
+        // Check if ALL previews are API errors (API欠费 etc)
+        const allFailed = preview_images && previewPlatforms.length > 0 && previewGot === 0
+          && Object.values(preview_images).every((imgs: any) => Array.isArray(imgs) && imgs.every((u: string) => u && u.startsWith("__API_ERROR__")));
+        const allPlaceholder = preview_images && previewPlatforms.length > 0 && previewGot === 0 && !allFailed
+          && Object.values(preview_images).every((imgs: any) => Array.isArray(imgs) && imgs.every((u: string) => u && !u.startsWith("http")));
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} collapsed />}
             {/* Preview image generation progress */}
             <StageShell icon={Icon.image}
-              title={allPreviewsDone ? "Storyboard Previews Ready" : `Generating Storyboard Previews (${previewGot}/${previewDone})`}
-              subtitle={allPreviewsDone ? "All preview images generated" : "Seedream is creating previews in parallel"}>
-              {!allPreviewsDone && (
+              title={allFailed ? "Preview Generation Failed" : allPlaceholder ? "Preview Prompts Ready" : allPreviewsDone ? "Storyboard Previews Ready" : `Generating Storyboard Previews (${previewGot}/${previewDone})`}
+              subtitle={allFailed ? "Seedance API account overdue or unavailable" : allPlaceholder ? "Set SEEDANCE_API_KEY to enable automatic image generation" : allPreviewsDone ? "All preview images generated" : "Seedream is creating previews in parallel"}>
+              {allFailed ? (
+                <div className="mt-2 p-4 rounded-xl bg-red-500/[0.04] border border-red-500/10">
+                  <p className="text-sm text-red-400/80">Seedance API 账户欠费，无法生成图片。</p>
+                  <p className="text-xs text-zinc-500 mt-1">视频将继续生成（使用脚本描述替代预览图）。</p>
+                </div>
+              ) : allPlaceholder ? (
+                <div className="mt-2 p-4 rounded-xl bg-amber-500/[0.04] border border-amber-500/10">
+                  <p className="text-sm text-amber-400/80">预览图 prompt 已就绪，设置 SEEDANCE_API_KEY 可自动生成图片。</p>
+                </div>
+              ) : !allPreviewsDone && (
                 <div className="flex items-center gap-4 mt-2 mb-4">
                   <Spinner />
                   <div>
@@ -249,29 +263,35 @@ export default function TaskStage({
               </div>
               {/* Show preview thumbnails as they arrive */}
               {previewPlatforms.length > 0 && (
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 space-y-4">
                   {previewPlatforms.map(plat => {
                     const imgs = (preview_images?.[plat] || []) as string[];
                     const done = imgs.filter((u: string) => u && u.startsWith("http")).length;
+                    const allDone = done >= imgs.length;
                     return (
-                      <div key={plat} className="flex items-center gap-3">
-                        <span className="text-[10px] font-semibold uppercase text-zinc-500 w-16 flex-shrink-0">{plat}</span>
-                        <div className="flex-1 flex gap-1">
+                      <div key={plat}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-semibold uppercase text-zinc-400 capitalize">{plat}</span>
+                          <span className={`text-[10px] ${allDone ? "text-emerald-400" : "text-amber-400"}`}>
+                            {allDone ? `${done} previews ready` : `${done}/${imgs.length}`}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-6 gap-2">
                           {imgs.map((url: string, i: number) => (
-                            <div key={i} className={`w-8 h-8 rounded-md flex-shrink-0 border ${
+                            <div key={i} className={`aspect-[9/16] rounded-lg flex-shrink-0 border overflow-hidden ${
                               url && url.startsWith("http")
-                                ? "border-amber-500/30 overflow-hidden"
+                                ? "border-amber-500/20"
                                 : "border-zinc-700/30 bg-zinc-800/50 flex items-center justify-center"
                             }`}>
                               {url && url.startsWith("http") ? (
-                                <img src={url} className="w-full h-full object-cover" alt={`${plat}-${i}`} />
+                                <img src={url} className="w-full h-full object-cover" alt={`${plat} shot ${i + 1}`}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                               ) : (
-                                <div className="w-2 h-2 border border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
+                                <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
                               )}
                             </div>
                           ))}
                         </div>
-                        <span className="text-[10px] text-zinc-500">{done}/{imgs.length}</span>
                       </div>
                     );
                   })}
