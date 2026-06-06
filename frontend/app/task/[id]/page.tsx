@@ -14,11 +14,17 @@ export default function TaskPage() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
 
+  const prevDataRef = useRef<string>("");
   const poll = useCallback(async () => {
     try {
       const data = await getTask(taskId);
       if (!mounted.current) return;
-      setTask(data);
+      // 数据没变就不更新 state，避免无谓重渲染导致页面跳动
+      const dataStr = JSON.stringify(data);
+      if (dataStr !== prevDataRef.current) {
+        prevDataRef.current = dataStr;
+        setTask(data);
+      }
       if (data.stage === "done" || data.stage === "failed") return;
       if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
         const interval = data.stage === "video_gen" ? 5000 : 2000;
@@ -37,8 +43,6 @@ export default function TaskPage() {
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
   }, [poll]);
-
-  useEffect(() => { poll(); }, [poll]);
 
   const handleSelectCreative = async (c: any) => {
     try { await submitCreative(taskId, c); setTask((p: any) => ({ ...p, stage: "style_wait" })); setTimeout(() => poll(), 1000); }
