@@ -29,6 +29,14 @@ export default function TaskStage({
   const showProduct = product_info && stage !== "pending" && stage !== "fetching";
   const hasRefImage = ref_image_url && !ref_image_url.startsWith("__");
   const isPlaceholder = ref_image_url && ref_image_url.startsWith("__AI_GEN__:");
+  const isProductImage = hasRefImage && product_info?.images?.includes(ref_image_url);
+  const refSubtitle = uploaded_ref_image
+    ? "Custom uploaded image"
+    : isProductImage
+      ? "Product page image (free — no API cost)"
+      : isPlaceholder
+        ? "Prompt ready — set SEEDANCE_API_KEY to generate"
+        : "AI-generated product hero shot";
   // Edit controls only shown before video generation starts
   const canEditRefImage = stage !== "video_gen" && stage !== "done" && stage !== "failed";
 
@@ -70,12 +78,12 @@ export default function TaskStage({
 
   // Persistent reference image card (shown in all stages after generation)
   const RefImageCard = hasRefImage ? (
-    <StageShell icon={Icon.image} title="Reference Image" subtitle={uploaded_ref_image ? "Custom uploaded image" : "AI-generated product hero shot"}>
+    <StageShell icon={Icon.image} title="Reference Image" subtitle={refSubtitle}>
       <img src={ref_image_url} alt="Product reference" className="w-full max-w-sm rounded-2xl shadow-xl shadow-amber-500/5" />
       {RefImageControls}
     </StageShell>
   ) : isPlaceholder ? (
-    <StageShell icon={Icon.image} title="Reference Image" subtitle="Prompt ready — set SEEDANCE_API_KEY to generate">
+    <StageShell icon={Icon.image} title="Reference Image" subtitle={refSubtitle}>
       <p className="text-[11px] text-zinc-500 leading-relaxed bg-[#0a0a0d] rounded-xl p-3 border border-zinc-700/30 max-h-24 overflow-y-auto">
         {ref_image_url!.replace("__AI_GEN__:", "")}
       </p>
@@ -92,7 +100,7 @@ export default function TaskStage({
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} />}
-            <StageShell icon={Icon.image} title="Reference Image" subtitle="AI-generated product hero shot">
+            <StageShell icon={Icon.image} title="Reference Image" subtitle={refSubtitle}>
               {uploaded_ref_image ? (
                 <>
                   <img src={uploaded_ref_image} alt="Uploaded reference" className="w-full max-w-sm rounded-2xl" />

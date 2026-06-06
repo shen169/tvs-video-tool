@@ -1,10 +1,10 @@
 """
-Stage 2 — AI 参考图生成 (Seedream via Ark API)。
+Stage 2 — 参考图获取。
 
-策略:
+策略（省钱优先）:
   1. 用户上传了图片 → 直接用
-  2. 有 SEEDANCE_API_KEY → 调用 Seedream 生图
-  3. 都没有 → 返回 prompt 占位符
+  2. 产品页面有抓取到的图片 → 用第一张（白底主图）
+  3. 都没有 → 调用 Seedream 生图（兜底）
 """
 
 import os
@@ -87,20 +87,28 @@ def _build_prompt(product_info: dict) -> str:
 
 
 async def generate_ref_image(task: dict) -> str:
-    """生成产品参考图。"""
-    # 用户上传了图片，直接使用
+    """获取产品参考图 — 优先用抓取的图片，不花钱生图。"""
+    # 1. 用户上传了图片，直接使用
     if task.get("uploaded_ref_image"):
         logger.info("Using uploaded reference image")
         return task["uploaded_ref_image"]
 
     product_info = task.get("product_info", {})
-    prompt = _build_prompt(product_info)
 
-    # Seedream 生图
+    # 2. 用产品页面抓取到的白底主图（免费！）
+    product_images = product_info.get("images", [])
+    if product_images and isinstance(product_images, list) and len(product_images) > 0:
+        first_img = product_images[0]
+        if isinstance(first_img, str) and first_img.startswith("http"):
+            logger.info(f"Using scraped product image: {first_img[:80]}...")
+            return first_img
+
+    # 3. 抓取不到图，才用 Seedream 生图（兜底）
+    prompt = _build_prompt(product_info)
     url = await _generate_with_seedream(prompt)
     if url:
         return url
 
-    # Fallback: 返回 prompt 占位符
-    logger.info("Seedream unavailable — returning prompt placeholder")
+    # 4. 全都没有 — prompt 占位符
+    logger.info("No image available — returning prompt placeholder")
     return f"__AI_GEN__:{prompt}"
