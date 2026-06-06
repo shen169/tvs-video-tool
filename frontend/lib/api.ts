@@ -97,11 +97,3 @@ export async function regenerateRefImage(taskId: string) {
     body: JSON.stringify({}),
   });
 }
-
-export async function regeneratePreviews(taskId: string) {
-  return request(`${BASE}/tasks/${taskId}/regenerate-previews`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-}

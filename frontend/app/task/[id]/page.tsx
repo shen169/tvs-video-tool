@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend, regeneratePreviews } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -14,32 +14,14 @@ export default function TaskPage() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
 
-  const prevDataRef = useRef<string>("");
   const poll = useCallback(async () => {
     try {
       const data = await getTask(taskId);
       if (!mounted.current) return;
-      // 数据没变就不更新 state，避免无谓重渲染导致页面跳动
-      const dataStr = JSON.stringify(data);
-      if (dataStr !== prevDataRef.current) {
-        prevDataRef.current = dataStr;
-        setTask(data);
-      }
+      setTask(data);
       if (data.stage === "done" || data.stage === "failed") return;
-      // ref_image 阶段：管线自动推进（生成推荐），无需交互，停轮询
-      // 但需要偶尔检查是否已推进到 recommend_wait（最长 8s）
-      if (data.stage === "ref_image") {
-        if (data.ref_image_url && !data.ref_image_url.startsWith("__")) {
-          // 参考图已加载，慢速检查管线是否推进到 recommend_wait
-          pollTimer.current = setTimeout(() => poll(), 8000);
-        } else {
-          // 参考图还没好，2s 后重试
-          pollTimer.current = setTimeout(() => poll(), 2000);
-        }
-        return;
-      }
       if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
-        const interval = data.stage === "video_gen" ? 5000 : 3000;
+        const interval = data.stage === "video_gen" ? 5000 : 2000;
         pollTimer.current = setTimeout(() => poll(), interval);
       }
     } catch (e: any) {
@@ -56,15 +38,17 @@ export default function TaskPage() {
     };
   }, [poll]);
 
-  const handleSelectCreative = useCallback(async (c: any) => {
+  useEffect(() => { poll(); }, [poll]);
+
+  const handleSelectCreative = async (c: any) => {
     try { await submitCreative(taskId, c); setTask((p: any) => ({ ...p, stage: "style_wait" })); setTimeout(() => poll(), 1000); }
     catch (e: any) { setError(e.message); }
-  }, [taskId, poll]);
-  const handleSelectStyle = useCallback(async (s: any) => {
+  };
+  const handleSelectStyle = async (s: any) => {
     try { await submitStyle(taskId, s); setTask((p: any) => ({ ...p, stage: "script_gen" })); setTimeout(() => poll(), 1000); }
     catch (e: any) { setError(e.message); }
-  }, [taskId, poll]);
-  const handleConfirmStoryboard = useCallback(async () => {
+  };
+  const handleConfirmStoryboard = async () => {
     try {
       await confirmStoryboard(taskId);
       if (mounted.current) {
@@ -72,8 +56,8 @@ export default function TaskPage() {
         setTimeout(() => { if (mounted.current) poll(); }, 1000);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
-  }, [taskId, poll]);
-  const handleConfirmRecommend = useCallback(async (creative: any, style: any) => {
+  };
+  const handleConfirmRecommend = async (creative: any, style: any) => {
     try {
       await confirmRecommend(taskId, creative, style);
       if (mounted.current) {
@@ -81,49 +65,16 @@ export default function TaskPage() {
         setTimeout(() => { if (mounted.current) poll(); }, 500);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
-  }, [taskId, poll]);
-  const handleRollback = useCallback(async (stageKey: string) => {
+  };
+  const handleRollback = async (stageKey: string) => {
     try {
       setRollbackPending(true);
       setError("");
       await rollbackTask(taskId, stageKey);
-      // 根据回退目标智能清除下游数据，不盲目全部清空
-      const clearMap: Record<string, string[]> = {
-        fetching:    ["product_info", "ref_image_url", "recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
-        ref_image:   ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
-        creative_wait: ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
-        style_wait:  ["recommendation", "selected_style", "scripts", "preview_images", "video_urls"],
-        recommend_wait: ["scripts", "preview_images", "video_urls"],
-        script_gen:  ["preview_images", "video_urls"],
-        preview_wait: ["video_urls"],  // 保留 preview_images！
-        video_gen:   [],
-      };
-      const fieldsToClear = clearMap[stageKey] || [];
-      const update: any = { stage: stageKey };
-      fieldsToClear.forEach((f: string) => { update[f] = null; });
-      setTask((p: any) => ({ ...p, ...update }));
+      setTask((p: any) => ({ ...p, stage: stageKey, scripts: null, preview_images: null, video_urls: null }));
       setTimeout(() => { poll(); setRollbackPending(false); }, 500);
     } catch (e: any) { setError(e.message); setRollbackPending(false); }
-  }, [taskId, poll]);
-  const handleRegeneratePreviews = useCallback(async () => {
-    try {
-      setError("");
-      await regeneratePreviews(taskId);
-      // 等待预览图生成（轮询）
-      let attempts = 0;
-      const checkPreviews = async () => {
-        if (!mounted.current || attempts > 30) return;
-        attempts++;
-        const data = await getTask(taskId);
-        if (data.preview_images && Object.keys(data.preview_images).length > 0) {
-          setTask(data);
-        } else {
-          setTimeout(checkPreviews, 2000);
-        }
-      };
-      setTimeout(checkPreviews, 2000);
-    } catch (e: any) { setError(e?.message || String(e)); }
-  }, [taskId]);
+  };
 
   if (!task) return (
     <div className="flex items-center justify-center h-full">
@@ -182,8 +133,7 @@ export default function TaskPage() {
         onSelectCreative={handleSelectCreative}
         onSelectStyle={handleSelectStyle}
         onConfirmStoryboard={handleConfirmStoryboard}
-        onConfirmRecommend={handleConfirmRecommend}
-        onRegeneratePreviews={handleRegeneratePreviews} />
+        onConfirmRecommend={handleConfirmRecommend} />
     </div>
   );
 }
