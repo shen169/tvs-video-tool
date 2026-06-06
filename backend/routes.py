@@ -13,7 +13,7 @@ def init_routes(s: InMemoryTaskStore):
 
 
 @router.post("/tasks")
-async def create_task(url: str = Form(...), platforms: str = Form("tiktok,amazon,youtube,instagram")):
+async def create_task(url: str = Form(...), platforms: str = Form("tiktok")):
     platform_list = [Platform(p.strip()) for p in platforms.split(",") if p.strip()]
     task = TaskState(task_id="", product_url=url, platforms=platform_list, stage=TaskStage.PENDING)
     task = store.create(task)
