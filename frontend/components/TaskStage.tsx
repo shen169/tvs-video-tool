@@ -229,11 +229,15 @@ export default function TaskStage({
       case "video_gen": {
         // Show preview images as they arrive (per-platform incremental saves)
         const previewPlatforms = preview_images ? Object.keys(preview_images) : [];
-        const previewDone = scripts ? Object.values(scripts).flat().length : 0;
-        const previewGot = preview_images
-          ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.filter((u: string) => u && u.startsWith("http")).length : 0), 0)
+        const previewTotal = preview_images
+          ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.length : 0), 0)
           : 0;
-        const allPreviewsDone = previewGot >= previewDone;
+        const previewDone = preview_images
+          ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.filter((u: string) => u && (u.startsWith("http") || u.startsWith("__SKIPPED__"))).length : 0), 0)
+          : 0;
+        const allPreviewsDone = previewTotal > 0 && previewDone >= previewTotal;
+        const platformNames = previewPlatforms.length > 0 ? previewPlatforms : (scripts ? Object.keys(scripts) : []);
+        const activePlatform = platformNames[0] || "tiktok";
         // Check if ALL previews are API errors (API欠费 etc)
         const allFailed = preview_images && previewPlatforms.length > 0 && previewGot === 0
           && Object.values(preview_images).every((imgs: any) => Array.isArray(imgs) && imgs.every((u: string) => u && u.startsWith("__API_ERROR__")));
@@ -244,7 +248,7 @@ export default function TaskStage({
             {showProduct && <ProductAnalysis info={product_info} collapsed />}
             {/* Preview image generation progress */}
             <StageShell icon={Icon.image}
-              title={allFailed ? "Preview Generation Failed" : allPlaceholder ? "Preview Prompts Ready" : allPreviewsDone ? "Storyboard Previews Ready" : `Generating Storyboard Previews (${previewGot}/${previewDone})`}
+              title={allFailed ? "Preview Generation Failed" : allPlaceholder ? "Preview Prompts Ready" : allPreviewsDone ? "Storyboard Previews Ready" : `Generating Storyboard Previews (${previewDone}/${previewTotal})`}
               subtitle={allFailed ? "Seedance API account overdue or unavailable" : allPlaceholder ? "Set SEEDANCE_API_KEY to enable automatic image generation" : allPreviewsDone ? "All preview images generated" : "Seedream is creating previews in parallel"}>
               {allFailed ? (
                 <div className="mt-2 p-4 rounded-xl bg-red-500/[0.04] border border-red-500/10">
@@ -259,7 +263,7 @@ export default function TaskStage({
                 <div className="flex items-center gap-4 mt-2 mb-4">
                   <Spinner />
                   <div>
-                    <p className="text-sm text-zinc-300">Rendering {previewDone} previews across {previewPlatforms.length || scripts ? Object.keys(scripts || {}).length : 0} platforms...</p>
+                    <p className="text-sm text-zinc-300">Rendering previews across {platformNames.length} platform(s)...</p>
                     <p className="text-xs text-zinc-500 mt-1">All shots generated in parallel · ~20s total</p>
                   </div>
                 </div>
@@ -267,10 +271,17 @@ export default function TaskStage({
               {/* Progress bar */}
               <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                 <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000"
-                  style={{ width: `${previewDone > 0 ? Math.max(5, (previewGot / previewDone) * 100) : 60}%` }} />
+                  style={{ width: `${previewTotal > 0 ? Math.max(5, (previewDone / previewTotal) * 100) : 60}%` }} />
               </div>
-              {/* Show preview thumbnails as they arrive */}
-              {previewPlatforms.length > 0 && (
+              {/* Show full storyboard with images when previews are ready */}
+              {allPreviewsDone && scripts && (
+                <div className="mt-4">
+                  <StoryboardGallery scripts={scripts} previewImages={preview_images}
+                    platform={activePlatform} isGenerating={false} hideConfirm={true} onConfirm={() => {}} />
+                </div>
+              )}
+              {/* Show progress thumbnails while generating */}
+              {!allPreviewsDone && previewPlatforms.length > 0 && (
                 <div className="mt-4 space-y-4">
                   {previewPlatforms.map(plat => {
                     const imgs = (preview_images?.[plat] || []) as string[];

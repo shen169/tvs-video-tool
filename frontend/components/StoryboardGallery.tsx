@@ -2,13 +2,14 @@
 import { Icon, SvgIcon } from "./Icons";
 
 export default function StoryboardGallery({
-  scripts, previewImages, platform, onConfirm, isGenerating,
+  scripts, previewImages, platform, onConfirm, isGenerating, hideConfirm,
 }: {
   scripts: Record<string, any[]>;
   previewImages?: Record<string, string[]>;
   platform: string;
   onConfirm: () => void;
   isGenerating?: boolean;
+  hideConfirm?: boolean;
 }) {
   const shots = scripts?.[platform] || [];
   const previews = previewImages?.[platform] || [];
@@ -86,10 +87,12 @@ export default function StoryboardGallery({
         })}
       </div>
 
-      <button onClick={onConfirm}
-        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
-        ✦ Confirm & Generate Video
-      </button>
+      {!hideConfirm && (
+        <button onClick={onConfirm}
+          className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed text-black font-bold text-sm tracking-wide transition-all duration-300 active:scale-[0.98] shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30">
+          ✦ Confirm & Generate Video
+        </button>
+      )}
     </div>
   );
 }
