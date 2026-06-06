@@ -125,7 +125,7 @@ export default function RecommendationCard({
     if (dim === "video_type") {
       // 切换视频类型 → 自动匹配所有维度默认值
       const defaults = VIDEO_TYPE_DEFAULTS[val] || VIDEO_TYPE_DEFAULTS.pain_point_relief;
-      const newStyle: any = { ...style, video_type: val, video_type_label: DIM_DEFS.video_type.options.find(o => o.id === val)?.label || val };
+      const newStyle: any = { ...style, video_type: val, video_type_label: DIM_DEFS.video_type.options.find((o: any) => o.id === val)?.label || val };
       for (const [k, v] of Object.entries(defaults)) {
         const labelKey = `${k}_label`;
         const def = DIM_DEFS[k];
