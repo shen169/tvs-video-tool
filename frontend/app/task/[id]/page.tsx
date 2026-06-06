@@ -14,11 +14,13 @@ export default function TaskPage() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
 
+  const lastJson = useRef("");
   const poll = useCallback(async () => {
     try {
       const data = await getTask(taskId);
       if (!mounted.current) return;
-      setTask(data);
+      const json = JSON.stringify(data);
+      if (json !== lastJson.current) { lastJson.current = json; setTask(data); }
       if (data.stage === "done" || data.stage === "failed") return;
       if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
         const interval = data.stage === "video_gen" ? 5000 : 2000;
