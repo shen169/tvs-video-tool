@@ -20,8 +20,8 @@ import asyncio as _asyncio
 _semaphore = _asyncio.Semaphore(2)
 
 
-async def _generate_preview_image(prompt: str) -> str:
-    """调用 Seedream 生成单张 9:16 预览图。"""
+async def _generate_preview_image(prompt: str, ref_image_url: str = None) -> str:
+    """调用 Seedream 生成单张 9:16 预览图，可选参考图做图生图。"""
     api_key = os.getenv("SEEDANCE_API_KEY", "")
     if not api_key:
         return prompt  # 无 key 返回 prompt 文本
@@ -29,21 +29,26 @@ async def _generate_preview_image(prompt: str) -> str:
     async with _semaphore:  # 限制并发，避免 429 限流
         try:
             async with httpx.AsyncClient(timeout=120) as client:
+                body = {
+                    "model": SEEDREAM_MODEL,
+                    "prompt": prompt,
+                    "sequential_image_generation": "disabled",
+                    "response_format": "url",
+                    "size": "2k",          # 2k 是 Seedream 最小尺寸
+                    "stream": False,
+                    "watermark": False,
+                }
+                # 传入参考图做图生图，确保分镜画面中产品外观一致
+                if ref_image_url:
+                    body["image"] = ref_image_url
+
                 resp = await client.post(
                     f"{ARK_API_BASE}/images/generations",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": SEEDREAM_MODEL,
-                        "prompt": prompt,
-                        "sequential_image_generation": "disabled",
-                        "response_format": "url",
-                        "size": "2k",          # 2k 是 Seedream 最小尺寸
-                        "stream": False,
-                        "watermark": False,
-                    },
+                    json=body,
                 )
                 if resp.status_code != 200:
                     err_text = resp.text[:300]
@@ -96,10 +101,17 @@ async def generate_preview_images(task: dict, platform: str) -> list[str]:
     product_info = task.get("product_info") or {}
     continuity = scripts[0].get("continuity_anchor", "") if scripts else ""
 
+    # 获取参考图 URL（优先用户上传的，其次产品抓取的）
+    ref_image_url = (task.get("uploaded_ref_image")
+                     or task.get("ref_image_url", "")
+                     or "")
+    if ref_image_url and not ref_image_url.startswith("http"):
+        ref_image_url = ""  # 非 HTTP URL（如 __AI_GEN__: 占位符）不传
+
     # 并行生成所有分镜的预览图（受 _semaphore 限流）
     async def _gen_one(shot: dict) -> str:
         prompt = _build_preview_prompt(shot, style, continuity, product_info)
-        return await _generate_preview_image(prompt)
+        return await _generate_preview_image(prompt, ref_image_url or None)
 
     # 全部 6 张分镜都生成预览图
     previews = await _asyncio.gather(*[_gen_one(shot) for shot in scripts])
