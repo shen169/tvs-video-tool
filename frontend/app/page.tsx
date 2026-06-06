@@ -12,7 +12,7 @@ const PLATFORMS = [
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
-  const [platforms, setPlatforms] = useState(["tiktok", "amazon", "youtube", "instagram"]);
+  const [platforms, setPlatforms] = useState(["tiktok"]);
   const [image, setImage] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
