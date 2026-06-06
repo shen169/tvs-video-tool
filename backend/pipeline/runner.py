@@ -46,7 +46,7 @@ async def run_pipeline(task_id: str, store: InMemoryTaskStore):
 
 
 async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
-    """用户确认推荐后 → 生成脚本分镜"""
+    """用户确认推荐后 → 生成脚本分镜 + 预览图"""
     try:
         task = store.get(task_id)
         if not task:
@@ -62,15 +62,27 @@ async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
             style,
             task.creative_direction
         )
-        store.update(task_id, scripts=scripts, stage=TaskStage.PREVIEW_WAIT)
-        logger.info(f"[{task_id}] Scripts complete, waiting for storyboard confirmation")
+        store.update(task_id, scripts=scripts)
+
+        # 生成预览图（提前到 preview_wait 之前）
+        logger.info(f"[{task_id}] Generating preview images for {len(platforms)} platforms")
+        from .stage5_preview import generate_preview_images
+        previews: dict[str, list[str]] = {}
+        async def _gen_platform(plat: str):
+            previews[plat] = await generate_preview_images(task.model_dump(), plat)
+            store.update(task_id, preview_images=dict(previews))
+            logger.info(f"[{task_id}] {plat} previews saved ({len(previews[plat])} shots)")
+        await asyncio.gather(*[_gen_platform(plat) for plat in platforms])
+
+        store.update(task_id, preview_images=previews, stage=TaskStage.PREVIEW_WAIT)
+        logger.info(f"[{task_id}] Scripts + previews complete, waiting for storyboard confirmation")
     except Exception as e:
         logger.error(f"[{task_id}] Pipeline error at script gen: {e}")
         store.update(task_id, stage=TaskStage.FAILED, error=str(e)[:500])
 
 
 async def run_stage5_and_6(task_id: str, store: InMemoryTaskStore):
-    """Stage 5-6：并行生成所有平台预览图 + 调用 Seedance 生成视频"""
+    """Stage 6：调用 Seedance 生成视频（预览图已在 continue_pipeline 中生成）"""
     try:
         task = store.get(task_id)
         if not task:
@@ -79,23 +91,8 @@ async def run_stage5_and_6(task_id: str, store: InMemoryTaskStore):
         task_dict = task.model_dump()
         platforms = [p.value for p in task.platforms]
 
-        logger.info(f"[{task_id}] Stage 5: Generating preview images for {len(platforms)} platforms")
-
-        # 并行生成所有平台的预览图（每平台内 6 个 shot 也并行）
-        from .stage5_preview import generate_preview_images
-        previews: dict[str, list[str]] = {}
-
-        async def _gen_platform(plat: str):
-            previews[plat] = await generate_preview_images(task_dict, plat)
-            # 每个平台完成后立即保存，让前端看到进度
-            store.update(task_id, preview_images=dict(previews))
-            logger.info(f"[{task_id}] {plat} previews saved ({len(previews[plat])} shots)")
-
-        await asyncio.gather(*[_gen_platform(plat) for plat in platforms])
-
         logger.info(f"[{task_id}] Stage 6: Generating videos via Seedance")
-        # Preview images already saved above; set stage to video_gen now
-        store.update(task_id, stage=TaskStage.VIDEO_GEN, preview_images=previews)
+        store.update(task_id, stage=TaskStage.VIDEO_GEN)
         from .stage6_video import generate_all_videos
         videos = await generate_all_videos(task_dict, platforms)
         store.update(task_id, video_urls=videos, stage=TaskStage.DONE)

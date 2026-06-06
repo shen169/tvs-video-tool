@@ -227,99 +227,33 @@ export default function TaskStage({
       }
 
       case "video_gen": {
-        // Show preview images as they arrive (per-platform incremental saves)
-        const previewPlatforms = preview_images ? Object.keys(preview_images) : [];
-        const previewTotal = preview_images
-          ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.length : 0), 0)
-          : 0;
-        const previewDone = preview_images
-          ? Object.values(preview_images).reduce((sum: number, imgs: any) => sum + (Array.isArray(imgs) ? imgs.filter((u: string) => u && (u.startsWith("http") || u.startsWith("__SKIPPED__"))).length : 0), 0)
-          : 0;
-        const allPreviewsDone = previewTotal > 0 && previewDone >= previewTotal;
-        const platformNames = previewPlatforms.length > 0 ? previewPlatforms : (scripts ? Object.keys(scripts) : []);
-        const activePlatform = platformNames[0] || "tiktok";
-        // Check if ALL previews are API errors (API欠费 etc)
-        const allFailed = preview_images && previewPlatforms.length > 0 && previewGot === 0
-          && Object.values(preview_images).every((imgs: any) => Array.isArray(imgs) && imgs.every((u: string) => u && u.startsWith("__API_ERROR__")));
-        const allPlaceholder = preview_images && previewPlatforms.length > 0 && previewGot === 0 && !allFailed
-          && Object.values(preview_images).every((imgs: any) => Array.isArray(imgs) && imgs.every((u: string) => u && !u.startsWith("http")));
+        const platformKeys = scripts ? Object.keys(scripts) : [];
+        const activePlatform = platformKeys[0] || "tiktok";
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} collapsed />}
-            {/* Preview image generation progress */}
-            <StageShell icon={Icon.image}
-              title={allFailed ? "Preview Generation Failed" : allPlaceholder ? "Preview Prompts Ready" : allPreviewsDone ? "Storyboard Previews Ready" : `Generating Storyboard Previews (${previewDone}/${previewTotal})`}
-              subtitle={allFailed ? "Seedance API account overdue or unavailable" : allPlaceholder ? "Set SEEDANCE_API_KEY to enable automatic image generation" : allPreviewsDone ? "All preview images generated" : "Seedream is creating previews in parallel"}>
-              {allFailed ? (
-                <div className="mt-2 p-4 rounded-xl bg-red-500/[0.04] border border-red-500/10">
-                  <p className="text-sm text-red-400/80">Seedance API 账户欠费，无法生成图片。</p>
-                  <p className="text-xs text-zinc-500 mt-1">视频将继续生成（使用脚本描述替代预览图）。</p>
-                </div>
-              ) : allPlaceholder ? (
-                <div className="mt-2 p-4 rounded-xl bg-amber-500/[0.04] border border-amber-500/10">
-                  <p className="text-sm text-amber-400/80">预览图 prompt 已就绪，设置 SEEDANCE_API_KEY 可自动生成图片。</p>
-                </div>
-              ) : !allPreviewsDone && (
-                <div className="flex items-center gap-4 mt-2 mb-4">
-                  <Spinner />
-                  <div>
-                    <p className="text-sm text-zinc-300">Rendering previews across {platformNames.length} platform(s)...</p>
-                    <p className="text-xs text-zinc-500 mt-1">All shots generated in parallel · ~20s total</p>
+            {/* Show storyboard with preview images */}
+            {scripts && (
+              <div>
+                {platformKeys.length > 1 && (
+                  <div className="flex gap-1.5 mb-4">
+                    {platformKeys.map((plat, i) => (
+                      <button key={plat} onClick={() => setStoryboardTab(i)}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all ${
+                          i === storyboardTab
+                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                        }`}>
+                        {plat}
+                      </button>
+                    ))}
                   </div>
-                </div>
-              )}
-              {/* Progress bar */}
-              <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-1000"
-                  style={{ width: `${previewTotal > 0 ? Math.max(5, (previewDone / previewTotal) * 100) : 60}%` }} />
+                )}
+                <StoryboardGallery scripts={scripts} previewImages={preview_images}
+                  platform={activePlatform} isGenerating={false} hideConfirm={true} onConfirm={() => {}} />
               </div>
-              {/* Show full storyboard with images when previews are ready */}
-              {allPreviewsDone && scripts && (
-                <div className="mt-4">
-                  <StoryboardGallery scripts={scripts} previewImages={preview_images}
-                    platform={activePlatform} isGenerating={false} hideConfirm={true} onConfirm={() => {}} />
-                </div>
-              )}
-              {/* Show progress thumbnails while generating */}
-              {!allPreviewsDone && previewPlatforms.length > 0 && (
-                <div className="mt-4 space-y-4">
-                  {previewPlatforms.map(plat => {
-                    const imgs = (preview_images?.[plat] || []) as string[];
-                    const done = imgs.filter((u: string) => u && u.startsWith("http")).length;
-                    const allDone = done >= imgs.length;
-                    return (
-                      <div key={plat}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] font-semibold uppercase text-zinc-400 capitalize">{plat}</span>
-                          <span className={`text-[10px] ${allDone ? "text-emerald-400" : "text-amber-400"}`}>
-                            {allDone ? `${done} previews ready` : `${done}/${imgs.length}`}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-6 gap-2">
-                          {imgs.map((url: string, i: number) => (
-                            <div key={i} className={`aspect-[9/16] rounded-lg flex-shrink-0 border overflow-hidden ${
-                              url && url.startsWith("http")
-                                ? "border-amber-500/20"
-                                : "border-zinc-700/30 bg-zinc-800/50 flex items-center justify-center"
-                            }`}>
-                              {url && url.startsWith("http") ? (
-                                <img src={url} className="w-full h-full object-cover" alt={`${plat} shot ${i + 1}`}
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                              ) : url && url.startsWith("__SKIPPED__") ? (
-                                <span className="text-[10px] text-zinc-600">—</span>
-                              ) : (
-                                <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </StageShell>
-            {/* Video generation */}
+            )}
+            {/* Video generation progress */}
             <StageShell icon={Icon.film} title="Video Rendering" subtitle="Seedance 2.0 is producing the final video">
               <div className="flex items-center gap-4 mt-2">
                 <Spinner />
