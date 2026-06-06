@@ -56,15 +56,15 @@ export default function TaskPage() {
     };
   }, [poll]);
 
-  const handleSelectCreative = async (c: any) => {
+  const handleSelectCreative = useCallback(async (c: any) => {
     try { await submitCreative(taskId, c); setTask((p: any) => ({ ...p, stage: "style_wait" })); setTimeout(() => poll(), 1000); }
     catch (e: any) { setError(e.message); }
-  };
-  const handleSelectStyle = async (s: any) => {
+  }, [taskId, poll]);
+  const handleSelectStyle = useCallback(async (s: any) => {
     try { await submitStyle(taskId, s); setTask((p: any) => ({ ...p, stage: "script_gen" })); setTimeout(() => poll(), 1000); }
     catch (e: any) { setError(e.message); }
-  };
-  const handleConfirmStoryboard = async () => {
+  }, [taskId, poll]);
+  const handleConfirmStoryboard = useCallback(async () => {
     try {
       await confirmStoryboard(taskId);
       if (mounted.current) {
@@ -72,8 +72,8 @@ export default function TaskPage() {
         setTimeout(() => { if (mounted.current) poll(); }, 1000);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
-  };
-  const handleConfirmRecommend = async (creative: any, style: any) => {
+  }, [taskId, poll]);
+  const handleConfirmRecommend = useCallback(async (creative: any, style: any) => {
     try {
       await confirmRecommend(taskId, creative, style);
       if (mounted.current) {
@@ -81,8 +81,8 @@ export default function TaskPage() {
         setTimeout(() => { if (mounted.current) poll(); }, 500);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
-  };
-  const handleRollback = async (stageKey: string) => {
+  }, [taskId, poll]);
+  const handleRollback = useCallback(async (stageKey: string) => {
     try {
       setRollbackPending(true);
       setError("");
@@ -104,8 +104,8 @@ export default function TaskPage() {
       setTask((p: any) => ({ ...p, ...update }));
       setTimeout(() => { poll(); setRollbackPending(false); }, 500);
     } catch (e: any) { setError(e.message); setRollbackPending(false); }
-  };
-  const handleRegeneratePreviews = async () => {
+  }, [taskId, poll]);
+  const handleRegeneratePreviews = useCallback(async () => {
     try {
       setError("");
       await regeneratePreviews(taskId);
@@ -123,7 +123,7 @@ export default function TaskPage() {
       };
       setTimeout(checkPreviews, 2000);
     } catch (e: any) { setError(e?.message || String(e)); }
-  };
+  }, [taskId]);
 
   if (!task) return (
     <div className="flex items-center justify-center h-full">

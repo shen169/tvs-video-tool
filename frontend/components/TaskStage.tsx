@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, memo } from "react";
 import ProductAnalysis from "./ProductAnalysis";
 import CreativePicker from "./CreativePicker";
 import StylePicker from "./StylePicker";
@@ -9,7 +9,7 @@ import VideoResult from "./VideoResult";
 import { Icon, SvgIcon } from "./Icons";
 import { regenerateRefImage, uploadRefImage } from "@/lib/api";
 
-export default function TaskStage({
+export default memo(function TaskStage({
   task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onConfirmRecommend, onRefresh, onRegeneratePreviews,
 }: {
   task: any;
@@ -315,7 +315,7 @@ export default function TaskStage({
   };
 
   return <div className="space-y-6">{content()}</div>;
-}
+})
 
 /* ── Shared Shell ── */
 function StageShell({ icon, title, subtitle, children }: {
