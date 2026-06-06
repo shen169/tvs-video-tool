@@ -101,12 +101,8 @@ async def generate_preview_images(task: dict, platform: str) -> list[str]:
         prompt = _build_preview_prompt(shot, style, continuity, product_info)
         return await _generate_preview_image(prompt)
 
-    # 只生成前 3 张关键帧（Hook/Build/Turn），省费用
-    preview_shots = scripts[:3]
-    previews = await _asyncio.gather(*[_gen_one(shot) for shot in preview_shots])
-    # 后 3 张用前 3 张的 URL 填充（或留空）
-    while len(previews) < len(scripts):
-        previews.append("__SKIPPED__:cost_optimization")
+    # 全部 6 张分镜都生成预览图
+    previews = await _asyncio.gather(*[_gen_one(shot) for shot in scripts])
 
     img_count = sum(1 for p in previews if p.startswith("http"))
     logger.info(f"[{platform}] {len(previews)} previews ({img_count} images, "
