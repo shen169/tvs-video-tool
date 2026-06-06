@@ -182,7 +182,8 @@ async def rollback_task(task_id: str, data: dict):
         stage_idx[TaskStage.STYLE_WAIT]:   ["recommendation", "selected_style", "scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.RECOMMEND_WAIT]: ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.SCRIPT_GEN]:   ["scripts", "preview_images", "video_urls"],
-        stage_idx[TaskStage.PREVIEW_WAIT]: ["preview_images", "video_urls"],
+        # 回退到 preview_wait 时保留 preview_images（它们是这个阶段的展示数据）
+        stage_idx[TaskStage.PREVIEW_WAIT]: ["video_urls"],
         stage_idx[TaskStage.VIDEO_GEN]:    ["video_urls"],
     }
 
@@ -214,12 +215,54 @@ async def rollback_task(task_id: str, data: dict):
         from .pipeline.runner import continue_pipeline
         import asyncio as _asyncio
         _asyncio.create_task(continue_pipeline(task_id, store))
+    elif target == TaskStage.PREVIEW_WAIT:
+        # 重新生成预览图，确保回退后仍有预览图可展示
+        from .pipeline.stage5_preview import generate_preview_images
+        import asyncio as _asyncio
+        async def _regen_preview():
+            try:
+                t = store.get(task_id)
+                if t and t.scripts:
+                    previews = {}
+                    for plat in t.scripts:
+                        previews[plat] = await generate_preview_images(t.model_dump(), plat)
+                    store.update(task_id, preview_images=previews)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"[{task_id}] Preview regen on rollback failed: {e}")
+        _asyncio.create_task(_regen_preview())
     elif target == TaskStage.VIDEO_GEN:
         from .pipeline.runner import run_stage5_and_6
         import asyncio as _asyncio
         _asyncio.create_task(run_stage5_and_6(task_id, store))
 
     return {"task_id": task_id, "stage": target.value}
+
+
+@router.post("/tasks/{task_id}/regenerate-previews")
+async def regenerate_previews(task_id: str):
+    """手动重新生成预览图（不改变阶段，用于自愈）。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    if not task.scripts:
+        raise HTTPException(status_code=409, detail="Task has no scripts; generate scripts first")
+    from .pipeline.stage5_preview import generate_preview_images
+    import asyncio as _asyncio
+
+    async def _regen():
+        try:
+            t = store.get(task_id)
+            if t and t.scripts:
+                previews = {}
+                for plat in t.scripts:
+                    previews[plat] = await generate_preview_images(t.model_dump(), plat)
+                store.update(task_id, preview_images=previews)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"[{task_id}] Manual preview regen failed: {e}")
+    _asyncio.create_task(_regen())
+    return {"task_id": task_id, "message": "Preview regeneration started"}
 
 
 @router.post("/tasks/{task_id}/storyboard")

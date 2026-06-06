@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend, regeneratePreviews } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -71,9 +71,42 @@ export default function TaskPage() {
       setRollbackPending(true);
       setError("");
       await rollbackTask(taskId, stageKey);
-      setTask((p: any) => ({ ...p, stage: stageKey, scripts: null, preview_images: null, video_urls: null }));
+      // 根据回退目标智能清除下游数据，不盲目全部清空
+      const clearMap: Record<string, string[]> = {
+        fetching:    ["product_info", "ref_image_url", "recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
+        ref_image:   ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
+        creative_wait: ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
+        style_wait:  ["recommendation", "selected_style", "scripts", "preview_images", "video_urls"],
+        recommend_wait: ["scripts", "preview_images", "video_urls"],
+        script_gen:  ["preview_images", "video_urls"],
+        preview_wait: ["video_urls"],  // 保留 preview_images！
+        video_gen:   [],
+      };
+      const fieldsToClear = clearMap[stageKey] || [];
+      const update: any = { stage: stageKey };
+      fieldsToClear.forEach((f: string) => { update[f] = null; });
+      setTask((p: any) => ({ ...p, ...update }));
       setTimeout(() => { poll(); setRollbackPending(false); }, 500);
     } catch (e: any) { setError(e.message); setRollbackPending(false); }
+  };
+  const handleRegeneratePreviews = async () => {
+    try {
+      setError("");
+      await regeneratePreviews(taskId);
+      // 等待预览图生成（轮询）
+      let attempts = 0;
+      const checkPreviews = async () => {
+        if (!mounted.current || attempts > 30) return;
+        attempts++;
+        const data = await getTask(taskId);
+        if (data.preview_images && Object.keys(data.preview_images).length > 0) {
+          setTask(data);
+        } else {
+          setTimeout(checkPreviews, 2000);
+        }
+      };
+      setTimeout(checkPreviews, 2000);
+    } catch (e: any) { setError(e?.message || String(e)); }
   };
 
   if (!task) return (
@@ -133,7 +166,8 @@ export default function TaskPage() {
         onSelectCreative={handleSelectCreative}
         onSelectStyle={handleSelectStyle}
         onConfirmStoryboard={handleConfirmStoryboard}
-        onConfirmRecommend={handleConfirmRecommend} />
+        onConfirmRecommend={handleConfirmRecommend}
+        onRegeneratePreviews={handleRegeneratePreviews} />
     </div>
   );
 }

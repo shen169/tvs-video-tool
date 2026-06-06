@@ -10,7 +10,7 @@ import { Icon, SvgIcon } from "./Icons";
 import { regenerateRefImage, uploadRefImage } from "@/lib/api";
 
 export default function TaskStage({
-  task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onConfirmRecommend, onRefresh,
+  task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onConfirmRecommend, onRefresh, onRegeneratePreviews,
 }: {
   task: any;
   taskId: string;
@@ -19,6 +19,7 @@ export default function TaskStage({
   onConfirmStoryboard: () => void;
   onConfirmRecommend: (creative: any, style: any) => void;
   onRefresh: () => void;
+  onRegeneratePreviews: () => void;
 }) {
   const { stage, product_info, ref_image_url, uploaded_ref_image,
     creative_directions, style_options, recommendation, scripts, preview_images, video_urls, error } = task;
@@ -201,7 +202,32 @@ export default function TaskStage({
         );
         const platformKeys = Object.keys(scripts);
         const activePlatform = platformKeys[storyboardTab] || platformKeys[0];
+        const previewsMissing = !preview_images || Object.keys(preview_images).length === 0;
         const generating = !preview_images || !preview_images[activePlatform] || preview_images[activePlatform].length === 0;
+
+        // 有脚本但预览图缺失（常见 bug: rollback 清空了 preview_images）
+        if (previewsMissing) {
+          return (
+            <div className="space-y-6 animate-in animate-in-1">
+              {showProduct && <ProductAnalysis info={product_info} collapsed />}
+              {RefImageCard}
+              <StageShell icon={Icon.image} title="Preview Images Missing"
+                subtitle="Storyboard scripts are ready but preview images need to be generated">
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    The storyboard has {Object.values(scripts).reduce((sum: number, s: any) => sum + (s?.length || 0), 0)} total shots across {platformKeys.length} platform{platformKeys.length > 1 ? 's' : ''}, but no preview images are available.
+                  </p>
+                  <button onClick={onRegeneratePreviews}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors cursor-pointer">
+                    <SvgIcon d={Icon.sparkle} size={4} />
+                    Regenerate Preview Images
+                  </button>
+                </div>
+              </StageShell>
+            </div>
+          );
+        }
+
         return (
           <div className="space-y-6 animate-in animate-in-1">
             {showProduct && <ProductAnalysis info={product_info} collapsed />}

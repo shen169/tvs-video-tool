@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 ARK_API_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 SEEDREAM_MODEL = "doubao-seedream-5-0-260128"
 
+# 限制并发 API 调用，防止触发 Seedream 限流（单个 API key 同时最多 2-3 个请求）
+import asyncio as _asyncio
+_semaphore = _asyncio.Semaphore(2)
+
 
 async def _generate_preview_image(prompt: str) -> str:
     """调用 Seedream 生成单张 9:16 预览图。"""
@@ -22,42 +26,43 @@ async def _generate_preview_image(prompt: str) -> str:
     if not api_key:
         return prompt  # 无 key 返回 prompt 文本
 
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{ARK_API_BASE}/images/generations",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": SEEDREAM_MODEL,
-                    "prompt": prompt,
-                    "sequential_image_generation": "disabled",
-                    "response_format": "url",
-                    "size": "2k",          # 2k 是 Seedream 最小尺寸
-                    "stream": False,
-                    "watermark": False,
-                },
-            )
-            if resp.status_code != 200:
-                err_text = resp.text[:300]
-                logger.warning(f"Seedream preview failed ({resp.status_code}): {err_text}")
-                # 检查是否欠费
-                if "AccountOverdueError" in err_text or "overdue" in err_text.lower():
-                    return f"__API_ERROR__:AccountOverdueError"
-                return f"__API_ERROR__:HTTP{resp.status_code}"
+    async with _semaphore:  # 限制并发，避免 429 限流
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{ARK_API_BASE}/images/generations",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": SEEDREAM_MODEL,
+                        "prompt": prompt,
+                        "sequential_image_generation": "disabled",
+                        "response_format": "url",
+                        "size": "2k",          # 2k 是 Seedream 最小尺寸
+                        "stream": False,
+                        "watermark": False,
+                    },
+                )
+                if resp.status_code != 200:
+                    err_text = resp.text[:300]
+                    logger.warning(f"Seedream preview failed ({resp.status_code}): {err_text}")
+                    # 检查是否欠费
+                    if "AccountOverdueError" in err_text or "overdue" in err_text.lower():
+                        return f"__API_ERROR__:AccountOverdueError"
+                    return f"__API_ERROR__:HTTP{resp.status_code}"
 
-            data = resp.json()
-            images = data.get("data", [])
-            if images and images[0].get("url"):
-                return images[0]["url"]
+                data = resp.json()
+                images = data.get("data", [])
+                if images and images[0].get("url"):
+                    return images[0]["url"]
 
+                return prompt
+
+        except Exception as e:
+            logger.warning(f"Seedream preview error: {e}")
             return prompt
-
-    except Exception as e:
-        logger.warning(f"Seedream preview error: {e}")
-        return prompt
 
 
 def _build_preview_prompt(shot: dict, style: dict, continuity: str,
@@ -91,16 +96,14 @@ async def generate_preview_images(task: dict, platform: str) -> list[str]:
     product_info = task.get("product_info") or {}
     continuity = scripts[0].get("continuity_anchor", "") if scripts else ""
 
-    # 并行生成所有分镜的预览图（大大加速！）
-    import asyncio
-
+    # 并行生成所有分镜的预览图（受 _semaphore 限流）
     async def _gen_one(shot: dict) -> str:
         prompt = _build_preview_prompt(shot, style, continuity, product_info)
         return await _generate_preview_image(prompt)
 
     # 只生成前 3 张关键帧（Hook/Build/Turn），省费用
     preview_shots = scripts[:3]
-    previews = await asyncio.gather(*[_gen_one(shot) for shot in preview_shots])
+    previews = await _asyncio.gather(*[_gen_one(shot) for shot in preview_shots])
     # 后 3 张用前 3 张的 URL 填充（或留空）
     while len(previews) < len(scripts):
         previews.append("__SKIPPED__:cost_optimization")
