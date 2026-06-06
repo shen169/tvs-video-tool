@@ -26,8 +26,20 @@ export default function TaskPage() {
         setTask(data);
       }
       if (data.stage === "done" || data.stage === "failed") return;
+      // ref_image 阶段：管线自动推进（生成推荐），无需交互，停轮询
+      // 但需要偶尔检查是否已推进到 recommend_wait（最长 8s）
+      if (data.stage === "ref_image") {
+        if (data.ref_image_url && !data.ref_image_url.startsWith("__")) {
+          // 参考图已加载，慢速检查管线是否推进到 recommend_wait
+          pollTimer.current = setTimeout(() => poll(), 8000);
+        } else {
+          // 参考图还没好，2s 后重试
+          pollTimer.current = setTimeout(() => poll(), 2000);
+        }
+        return;
+      }
       if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
-        const interval = data.stage === "video_gen" ? 5000 : 2000;
+        const interval = data.stage === "video_gen" ? 5000 : 3000;
         pollTimer.current = setTimeout(() => poll(), interval);
       }
     } catch (e: any) {
