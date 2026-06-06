@@ -72,7 +72,7 @@ async def _generate_preview_image(prompt: str, ref_image_url: str = None) -> str
 
 def _build_preview_prompt(shot: dict, style: dict, continuity: str,
                           product_info: dict) -> str:
-    """为单个分镜构造生图 prompt。"""
+    """为单个分镜构造生图 prompt — 侧重场景构图，产品外观由参考图提供。"""
     scene = shot.get("scene", "")
     shot_type = shot.get("shot_type", "medium")
     angle = shot.get("angle", "eye_level")
@@ -81,17 +81,61 @@ def _build_preview_prompt(shot: dict, style: dict, continuity: str,
 
     vs = style.get("visual_style", "clean_minimal")
     title = product_info.get("title", "product")
-    short_name = " ".join(title.replace("Amazon.com:", "").split()[:4])
+    desc = product_info.get("product_summary", product_info.get("description", ""))
 
-    return (
-        f"{vs} product photography of {short_name}, photorealistic, 8K. "
-        f"{scene}. "
-        f"{shot_type} shot, {angle} angle, {lighting} lighting. "
-        f"Purpose: {purpose}. "
-        f"9:16 vertical, professional advertising quality. "
-        f"No text, no logos, no watermarks. "
-        f"{continuity}"
-    )
+    # 取产品关键特征丰富 prompt
+    features = product_info.get("key_features", [])
+    feature_text = ", ".join(features[:2]) if features else ""
+
+    # 风格词映射到更具体的画面描述
+    style_desc = {
+        "clean_minimal": "minimalist clean background, soft neutral colors",
+        "lifestyle_warm": "warm home interior, natural materials, cozy atmosphere",
+        "tech_futuristic": "sleek modern environment, subtle ambient lighting",
+    }.get(vs, "professional studio setting")
+
+    # 角度 → 画面描述
+    angle_desc = {
+        "eye_level": "straight-on eye level view",
+        "top_down": "overhead top-down view",
+        "low_hero": "dramatic low angle hero perspective",
+        "45_degree": "elegant 45-degree angle",
+    }.get(angle, f"{angle} angle")
+
+    # 运镜 → 画面描述
+    camera_desc = {
+        "slow_push_in": "subject centered, shallow depth of field",
+        "slow_pull_out": "wide establishing shot, deep focus",
+        "dolly_right": "smooth lateral composition",
+        "static": "steady locked-off frame",
+        "tracking_arc": "dynamic curved composition",
+        "handheld_walk": "natural documentary feel",
+        "steadicam_float": "floating smooth movement feel",
+        "snap_zoom": "tight dramatic close-up",
+        "crash_zoom": "intense zoomed perspective",
+        "handheld_settle": "settled handheld stability",
+        "focus_rack": "rack focus between elements",
+        "macro_pan": "intricate detail reveal",
+        "extreme_slow_push": "meditative slow advance",
+        "depth_reveal": "layered depth unveiling",
+        "whip_pan": "energetic whip transition",
+    }.get(shot.get("camera_move", ""), "")
+
+    # 组合 prompt：产品描述（来自产品数据）+ 构图 + 场景
+    parts = [
+        f"Product advertising photo featuring \"{title}\"",
+        f"{style_desc}",
+        f"Scene: {scene[:200]}" if scene else "",
+        f"{shot_type} shot, {angle_desc}" if angle_desc else "",
+        f"{camera_desc}" if camera_desc else "",
+        f"{lighting} lighting",
+        f"Purpose: {purpose}" if purpose else "",
+        f"Key details: {feature_text}" if feature_text else f"Details: {desc[:150]}" if desc else "",
+        "9:16 vertical aspect ratio, photorealistic, professional commercial quality",
+        "No text, no logos, no watermarks, no lettering",
+        continuity if continuity else "",
+    ]
+    return ". ".join(p for p in parts if p)
 
 
 async def generate_preview_images(task: dict, platform: str) -> list[str]:
