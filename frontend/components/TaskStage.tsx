@@ -286,6 +286,8 @@ export default function TaskStage({
                               {url && url.startsWith("http") ? (
                                 <img src={url} className="w-full h-full object-cover" alt={`${plat} shot ${i + 1}`}
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              ) : url && url.startsWith("__SKIPPED__") ? (
+                                <span className="text-[10px] text-zinc-600">—</span>
                               ) : (
                                 <div className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin" />
                               )}

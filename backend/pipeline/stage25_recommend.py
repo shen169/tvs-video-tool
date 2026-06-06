@@ -295,24 +295,8 @@ def _heuristic_recommend(product_info: dict, platforms: list[str]) -> dict:
 # ═══════════════════════════════════════════════════════════════════════
 
 async def _call_ai(prompt: str) -> str | None:
-    """优先 Anthropic，fallback DeepSeek。"""
-    # Anthropic
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if api_key:
-        try:
-            from anthropic import AsyncAnthropic
-            client = AsyncAnthropic(api_key=api_key, timeout=60)
-            message = await client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1024,
-                system=RECOMMEND_SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return message.content[0].text
-        except Exception as e:
-            logger.warning(f"Anthropic recommend failed: {e}")
-
-    # DeepSeek fallback
+    """优先 DeepSeek（便宜），fallback Anthropic。"""
+    # DeepSeek
     api_key = os.getenv("DEEPSEEK_API_KEY", "")
     if api_key:
         try:
@@ -334,6 +318,22 @@ async def _call_ai(prompt: str) -> str | None:
                     return resp.json()["choices"][0]["message"]["content"]
         except Exception as e:
             logger.warning(f"DeepSeek recommend failed: {e}")
+
+    # Anthropic fallback
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if api_key:
+        try:
+            from anthropic import AsyncAnthropic
+            client = AsyncAnthropic(api_key=api_key, timeout=60)
+            message = await client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                system=RECOMMEND_SYSTEM,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return message.content[0].text
+        except Exception as e:
+            logger.warning(f"Anthropic recommend failed: {e}")
 
     return None
 

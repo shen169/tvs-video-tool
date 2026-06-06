@@ -35,7 +35,7 @@ async def _generate_preview_image(prompt: str) -> str:
                     "prompt": prompt,
                     "sequential_image_generation": "disabled",
                     "response_format": "url",
-                    "size": "2K",
+                    "size": "1K",          # 预览图用小尺寸，省费用
                     "stream": False,
                     "watermark": False,
                 },
@@ -98,7 +98,12 @@ async def generate_preview_images(task: dict, platform: str) -> list[str]:
         prompt = _build_preview_prompt(shot, style, continuity, product_info)
         return await _generate_preview_image(prompt)
 
-    previews = await asyncio.gather(*[_gen_one(shot) for shot in scripts])
+    # 只生成前 3 张关键帧（Hook/Build/Turn），省费用
+    preview_shots = scripts[:3]
+    previews = await asyncio.gather(*[_gen_one(shot) for shot in preview_shots])
+    # 后 3 张用前 3 张的 URL 填充（或留空）
+    while len(previews) < len(scripts):
+        previews.append("__SKIPPED__:cost_optimization")
 
     img_count = sum(1 for p in previews if p.startswith("http"))
     logger.info(f"[{platform}] {len(previews)} previews ({img_count} images, "

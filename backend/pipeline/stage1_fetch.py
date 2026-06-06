@@ -529,12 +529,12 @@ async def _analyze_with_ai(retrieved: dict, url: str) -> dict | None:
     retrieved_text = _build_analysis_prompt(retrieved, url)
     full_prompt = ANALYSIS_USER_PROMPT_TEMPLATE.replace("___RETRIEVED_DATA___", retrieved_text)
 
-    # 优先 Anthropic，fallback DeepSeek
-    raw = await _call_anthropic(full_prompt)
-    provider = "anthropic"
+    # 优先 DeepSeek（便宜），fallback Anthropic
+    raw = await _call_deepseek(full_prompt)
+    provider = "deepseek"
     if not raw:
-        raw = await _call_deepseek(full_prompt)
-        provider = "deepseek"
+        raw = await _call_anthropic(full_prompt)
+        provider = "anthropic"
 
     if not raw:
         logger.warning("No AI provider available")

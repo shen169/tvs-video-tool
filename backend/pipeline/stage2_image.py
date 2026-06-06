@@ -36,7 +36,7 @@ async def _generate_with_seedream(prompt: str) -> str | None:
                     "prompt": prompt,
                     "sequential_image_generation": "disabled",
                     "response_format": "url",
-                    "size": "2K",
+                    "size": "1K",          // 1K够用，省费用
                     "stream": False,
                     "watermark": False,
                 },
