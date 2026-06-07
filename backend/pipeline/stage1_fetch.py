@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 # ── Apify 配置 ──────────────────────────────────────────────────────────
 APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "")
-# Apify Amazon Product Scraper actor
+# junglee/amazon-crawler: 需要 categoryOrProductUrls（keyword爬取），不适合单产品查询
 APIFY_AMAZON_ACTOR = "junglee/amazon-crawler"
+# 注意: 免费层 Apify actor 代理常被 Amazon 封，返回空数据。优先依赖 HTML JSON-LD 解析。
 
 # ── AI Prompt ──────────────────────────────────────────────────────────
 ANALYSIS_SYSTEM_PROMPT = """You are a world-class e-commerce product analyst specializing in short-form video ad creation.
@@ -47,31 +48,34 @@ IMPORTANT RULES:
 # Layer 1: 数据检索
 # ═══════════════════════════════════════════════════════════════════════
 
-async def _scrape_with_apify(asin: str) -> dict | None:
-    """用 Apify Amazon Product Scraper 抓取产品数据。"""
+async def _scrape_with_apify(url: str) -> dict | None:
+    """用 Apify Amazon Product Scraper 抓取产品数据。
+
+    junglee/amazon-crawler 要求:
+    - categoryOrProductUrls: [{"url": "https://www.amazon.com/..."}]  ← 对象数组，不是字符串！
+    - URL 需要完整亚马逊产品链接（含产品名 slug），短格式 /dp/ASIN 会返回 no_results_found
+    """
     if not APIFY_TOKEN:
         logger.info("APIFY_API_TOKEN not set, skipping Apify")
         return None
 
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            # Step 1: 启动 actor run，等待完成
             actor_path = APIFY_AMAZON_ACTOR.replace("/", "~")
             resp = await client.post(
                 f"https://api.apify.com/v2/acts/{actor_path}/runs",
                 params={
                     "token": APIFY_TOKEN,
-                    "waitForFinish": "120",
+                    "waitForFinish": 120,
                 },
                 json={
-                    "asinCodes": [asin],
-                    "maxItemsPerAsin": 1,
-                    "proxyConfiguration": {"useApifyProxy": True},
+                    "categoryOrProductUrls": [{"url": url}],
+                    "maxItems": 3,
                 },
                 timeout=180,
             )
             if resp.status_code == 403:
-                logger.warning("Apify quota exceeded — falling back to Tavily")
+                logger.warning("Apify quota exceeded — falling back to other sources")
                 return None
             if resp.status_code not in (200, 201):
                 logger.warning(f"Apify returned {resp.status_code}: {resp.text[:300]}")
@@ -103,6 +107,10 @@ async def _scrape_with_apify(asin: str) -> dict | None:
                     items = ds_resp.json()
                     if isinstance(items, list) and len(items) > 0:
                         item = items[0]
+                        # 检查是否是 error item（产品不存在/反爬拦截）
+                        if item.get("error"):
+                            logger.warning(f"Apify item error: {item.get('error')} — {item.get('errorDescription', '')}")
+                            return None
                         logger.info(f"Apify scraped: {item.get('title', 'N/A')[:80]}")
                         return item
                     elif isinstance(items, dict):
@@ -213,13 +221,142 @@ def _parse_html_basics(html: str) -> dict:
     if m:
         desc = m.group(1)[:500]
 
-    # 4) Price — 多种格式
-    for pattern in [r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?',
-                    r'\$\d+\.?\d*']:
-        m = re.search(pattern, html)
-        if m and m.group(0) not in ('$0', '$0.00'):
-            price = m.group(0)
-            break
+    # 4) Price — 优先 Amazon 特定元素，再 fallback 到正则
+    # 4a) 尝试 Amazon 专有价格元素
+    for span_id in ['priceblock_ourprice', 'priceblock_dealprice',
+                     'apexPriceToPay', 'corePriceDisplay_desktop_feature_div',
+                     'tp_price_block_total_price_ww', 'price_inside_buybox']:
+        m = re.search(
+            rf'<[^>]*id=["\']{span_id}["\'][^>]*>.*?\$[\d,]+(?:\.\d{{2}})?.*?</',
+            html, re.DOTALL | re.IGNORECASE)
+        if m:
+            pm = re.search(r'\$[\d,]+(?:\.\d{2})?', m.group(0))
+            if pm and pm.group(0) not in ('$0', '$0.00', '$0.0'):
+                price = pm.group(0).replace(',', '')
+                logger.info(f"Price from Amazon element #{span_id}: {price}")
+                break
+
+    # 4b) 尝试 class 包含 price 的 span
+    if not price:
+        m = re.search(
+            r'<span[^>]*class="[^"]*price[^"]*"[^>]*>\s*(\$[\d,]+(?:\.\d{2})?)\s*</span>',
+            html, re.IGNORECASE)
+        if m and m.group(1) not in ('$0', '$0.00'):
+            price = m.group(1).replace(',', '')
+
+    # 4c) JSON-LD structured data — Amazon 产品页面最可靠的数据源
+    #     提取完整 Product schema: title, price, images, brand, description, rating
+    jsonld_data = {}
+    for m_ld in re.finditer(
+        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html, re.DOTALL | re.IGNORECASE):
+        try:
+            ld = json.loads(m_ld.group(1))
+            if isinstance(ld, dict) and ld.get("@type") == "Product":
+                jsonld_data = ld
+                break
+            # 也可能是 @graph 数组
+            if isinstance(ld, dict) and "@graph" in ld:
+                for item in ld["@graph"]:
+                    if isinstance(item, dict) and item.get("@type") == "Product":
+                        jsonld_data = item
+                        break
+                if jsonld_data:
+                    break
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    if jsonld_data:
+        # Price (优先 offers.price，Amazon 标准字段)
+        offers = jsonld_data.get("offers", {})
+        if isinstance(offers, dict):
+            jld_price = str(offers.get("price", ""))
+        elif isinstance(offers, list) and len(offers) > 0:
+            jld_price = str(offers[0].get("price", ""))
+        else:
+            jld_price = ""
+
+        if jld_price:
+            try:
+                float(jld_price)  # 验证是合法数字
+                if float(jld_price) > 0.5:
+                    price = f"${jld_price}"
+                    logger.info(f"Price from JSON-LD offers.price: {price}")
+            except (ValueError, TypeError):
+                pass
+
+        # 如果没从 offers 拿到价格，尝试其他路径
+        if not price:
+            for key in ("lowPrice", "highPrice", "price"):
+                raw = jsonld_data.get(key, "")
+                if raw:
+                    try:
+                        if float(str(raw)) > 0.5:
+                            price = f"${raw}"
+                            logger.info(f"Price from JSON-LD {key}: {price}")
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+        # JSON-LD 提供额外的可靠字段，补充到结果中
+        _jld_title = jsonld_data.get("name", "")
+        if _jld_title and not title:
+            title = _jld_title.strip()
+            logger.info(f"Title from JSON-LD: {title[:80]}")
+
+        _jld_desc = jsonld_data.get("description", "")
+        if _jld_desc and not desc:
+            desc = str(_jld_desc)[:500]
+
+        # Images from JSON-LD (Amazon 通常放高清图 URL)
+        _jld_images = jsonld_data.get("image", [])
+        if isinstance(_jld_images, str):
+            _jld_images = [_jld_images]
+        if isinstance(_jld_images, list) and _jld_images and not images:
+            images = [str(img) for img in _jld_images if str(img).startswith("http")][:10]
+            if images:
+                logger.info(f"Images from JSON-LD: {len(images)}")
+
+        _jld_brand = jsonld_data.get("brand", {})
+        if isinstance(_jld_brand, dict):
+            _jld_brand_name = _jld_brand.get("name", "")
+        elif isinstance(_jld_brand, str):
+            _jld_brand_name = _jld_brand
+        else:
+            _jld_brand_name = ""
+
+        _jld_rating = jsonld_data.get("aggregateRating", {})
+        if isinstance(_jld_rating, dict):
+            _jld_rating_val = _jld_rating.get("ratingValue", "")
+            _jld_review_cnt = _jld_rating.get("reviewCount", "")
+        else:
+            _jld_rating_val = ""
+            _jld_review_cnt = ""
+
+    # 4d) Fallback: 找所有 $ 金额，优先取带小数的（真实产品价格特征）
+    if not price:
+        all_prices = re.findall(r'\$[\d,]+(?:\.\d{2})?', html)
+        # 过滤：排除明显不合理的价格（<$1, 纯整数且<$20 的可能是导航/运费）
+        candidates = []
+        for p in all_prices:
+            numeric = float(p.replace('$', '').replace(',', ''))
+            if numeric < 0.5:
+                continue
+            candidates.append((p, numeric))
+        if candidates:
+            # 优先选择带小数的（$29.99 > $30）
+            with_cents = [(p, n) for p, n in candidates if '.' in p and n > 1.0]
+            if with_cents:
+                # 选最贵的（产品价格通常是页面上最高的价格之一）
+                price = sorted(with_cents, key=lambda x: -x[1])[0][0].replace(',', '')
+            else:
+                # 没有带小数的，选 > $20 的（过滤运费/小商品）
+                big = [(p, n) for p, n in candidates if n > 20]
+                if big:
+                    price = sorted(big, key=lambda x: -x[1])[0][0].replace(',', '')
+                else:
+                    price = candidates[0][0].replace(',', '')
+            logger.info(f"Price from regex scan: {price} (from {len(candidates)} candidates)")
 
     # 5) Images
     for pat in [r'"hiRes":"([^"]+)"', r'"large":"([^"]+)"',
@@ -242,10 +379,14 @@ def _parse_html_basics(html: str) -> dict:
             category_hints.append(kw)
 
     logger.info(f"HTML parsed: title='{title[:80]}', price='{price}', "
-                f"images={len(images)}, categories={category_hints}")
+                f"images={len(images)}, categories={category_hints}"
+                + (f", jsonld=yes" if jsonld_data else ""))
 
     return {"title": title, "description": desc[:500], "price": price,
-            "images": images, "category_hints": category_hints[:5]}
+            "images": images, "category_hints": category_hints[:5],
+            "jsonld_brand": _jld_brand_name if jsonld_data else "",
+            "jsonld_rating": _jld_rating_val if jsonld_data else "",
+            "jsonld_review_count": str(_jld_review_cnt) if jsonld_data else ""}
 
 
 def _extract_search_hints(url: str) -> str:
@@ -280,6 +421,7 @@ async def _retrieve_product_data(url: str) -> dict:
         "title": "",
         "description": "",
         "price": "",
+        "brand": "",
         "features": [],       # bullet points / specs
         "images": [],
         "category": [],
@@ -289,39 +431,115 @@ async def _retrieve_product_data(url: str) -> dict:
         "source": "none",      # apify | tavily | http | none
     }
 
-    # 1) 提取 ASIN（Apify 需要）
+    # 1) 检查是否是 Amazon URL（有 /dp/ASIN 或 /gp/product/ASIN）
     asin_match = re.search(r'/dp/([A-Z0-9]+)', url)
     asin = asin_match.group(1) if asin_match else ""
 
-    # 2) Apify Amazon Product Scraper
-    if asin:
-        apify_data = await _scrape_with_apify(asin)
+    # 2) Apify Amazon Product Scraper（传完整 URL，junglee actor 需要产品名 slug）
+    #    只要看起来是亚马逊链接就尝试；Tavily/HTTP 兜底
+    if "amazon." in url:
+        apify_data = await _scrape_with_apify(url)
         if apify_data:
+            # ── 价格解析（junglee actor 返回多种格式） ──
+            raw_price = apify_data.get("price", "")
+            if isinstance(raw_price, dict):
+                apify_price = raw_price.get("value", "")
+            elif isinstance(raw_price, (int, float)):
+                apify_price = f"${raw_price}"
+            elif isinstance(raw_price, str) and raw_price.strip():
+                # 格式: "278 $" → "$278",  "29.99 $" → "$29.99"
+                raw_str = raw_price.strip()
+                currency_match = re.match(r'([\d,.]+)\s*\$?', raw_str)
+                if currency_match:
+                    apify_price = f"${currency_match.group(1)}"
+                else:
+                    apify_price = raw_str
+            else:
+                apify_price = ""
+
+            raw_list_price = apify_data.get("listPrice", "")
+            if isinstance(raw_list_price, (str, int, float)) and str(raw_list_price).strip():
+                list_str = str(raw_list_price).strip()
+                m = re.match(r'([\d,.]+)', list_str)
+                if m:
+                    apify_price = f"${m.group(1)}"
+
+            # ── 图片 ──
+            apify_images = (
+                apify_data.get("highResolutionImages") or
+                apify_data.get("galleryThumbnails") or
+                apify_data.get("imageUrls") or
+                []
+            )
+            if not apify_images and apify_data.get("thumbnailImage"):
+                apify_images = [apify_data["thumbnailImage"]]
+
+            # ── 分类（breadCrumbs 是 path 列表） ──
+            breadcrumbs = apify_data.get("breadCrumbs", [])
+            if isinstance(breadcrumbs, list):
+                apify_category = [b.get("name", str(b)) if isinstance(b, dict) else str(b)
+                                  for b in breadcrumbs]
+            else:
+                apify_category = apify_data.get("category", []) or apify_data.get("categories", [])
+
             retrieved.update({
                 "title": apify_data.get("title", ""),
                 "description": apify_data.get("description", "")[:800],
-                "price": apify_data.get("price", {}).get("value", "") if isinstance(apify_data.get("price"), dict) else str(apify_data.get("price", "")),
-                "features": apify_data.get("featureBullets", []) or apify_data.get("features", []),
-                "images": apify_data.get("imageUrls", []) or apify_data.get("images", []) or [],
-                "category": apify_data.get("category", []) or apify_data.get("categories", []),
-                "rating": str(apify_data.get("rating", "") or apify_data.get("starRating", "")),
-                "review_count": str(apify_data.get("reviewsCount", "") or apify_data.get("numberOfReviews", "")),
+                "price": apify_price,
+                "features": (apify_data.get("features") or
+                             apify_data.get("featureBullets") or []),
+                "images": apify_images if isinstance(apify_images, list) else [],
+                "category": apify_category,
+                "rating": str(apify_data.get("stars", "") or apify_data.get("rating", "")),
+                "review_count": str(apify_data.get("reviewsCount", "") or
+                                    apify_data.get("numberOfReviews", "")),
                 "source": "apify",
             })
             logger.info(f"Apify data: title={retrieved['title'][:60]}, "
-                        f"features={len(retrieved['features'])}, "
+                        f"price={apify_price}, features={len(retrieved['features'])}, "
                         f"images={len(retrieved['images'])}")
 
-    # 3) HTTP 优先（真实页面数据，免费且快）
+    # 3) HTTP 解析（仅在 Apify 数据不完整时补充，绝不覆盖 Apify 真实数据）
     html = await _fetch_html(url)
     basics = _parse_html_basics(html)
     if basics.get("title"):
-        retrieved.update(basics)
-        retrieved["source"] = "http"
-        logger.info(f"HTTP parsed real product: {basics['title'][:80]}")
+        # 只填空白字段，不覆盖已有数据（Apify 抓取的数据更可靠）
+        base_fields = {
+            "title": "title",
+            "description": "description",
+            "price": "price",
+            "images": "images",
+            "category_hints": "category",
+        }
+        for src_field, dst_field in base_fields.items():
+            existing = retrieved.get(dst_field)
+            is_empty = (
+                existing is None or
+                (isinstance(existing, str) and not existing.strip()) or
+                (isinstance(existing, list) and len(existing) == 0)
+            )
+            if is_empty and basics.get(src_field):
+                retrieved[dst_field] = basics[src_field]
+
+        # JSON-LD 额外字段（brand, rating, review_count）
+        for src, dst in [("jsonld_brand", "brand"), ("jsonld_rating", "rating"),
+                         ("jsonld_review_count", "review_count")]:
+            existing = retrieved.get(dst)
+            is_empty = (
+                existing is None or
+                (isinstance(existing, str) and not existing.strip())
+            )
+            if is_empty and basics.get(src):
+                retrieved[dst] = basics[src]
+                logger.debug(f"Filled '{dst}' from JSON-LD: {basics[src][:40]}")
+
+        if retrieved["source"] == "none":
+            retrieved["source"] = "http"
+        logger.info(f"HTTP merged (not overwritten): title='{basics['title'][:80]}', "
+                    f"price='{basics.get('price', '')}'")
 
     # 4) Tavily 搜索（补充评价、口碑；仅在 HTTP 数据不够时作为主要来源）
-    if not retrieved.get("title") or retrieved["source"] == "none":
+    if not retrieved.get("title") or retrieved["source"] in ("none", "tavily"):
         url_hints = _extract_search_hints(url)
     else:
         # 已经有产品名，用精确关键词搜补充信息
@@ -594,7 +812,7 @@ def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
         "category_hints": (ai_data.get("category_tree") if ai_data else []) or retrieved.get("category", []),
         "url": url,
         # ── AI 新增字段（强制标准化为列表） ──
-        "brand": (ai_data.get("brand") if ai_data else "") or "",
+        "brand": (ai_data.get("brand") if ai_data else "") or retrieved.get("brand", ""),
         "key_features": _as_list(ai_data.get("key_features") if ai_data else None) or retrieved.get("features", []),
         "target_audience": _as_list(ai_data.get("target_audience") if ai_data else None),
         "pain_points": _as_list(ai_data.get("pain_points") if ai_data else None),
