@@ -792,8 +792,9 @@ def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
         return default
 
     # AI 编造的假价格检测：纯数字且不在抓取数据中出现过的，丢弃
-    ai_price = (ai_data.get("price") if ai_data else "").strip()
-    scraped_price = retrieved.get("price", "").strip()
+    _ai_raw_price = (ai_data.get("price") if ai_data else "") or ""
+    ai_price = (str(_ai_raw_price) if not isinstance(_ai_raw_price, str) else _ai_raw_price).strip()
+    scraped_price = str(retrieved.get("price", "") or "").strip()
     # 如果 AI 给的价格不在抓取数据里出现过（哪怕部分匹配），大概率是编的
     if ai_price and scraped_price and ai_price not in scraped_price and scraped_price not in ai_price:
         logger.warning(f"AI price '{ai_price}' doesn't match scraped '{scraped_price}' — discarding AI price")
@@ -803,11 +804,20 @@ def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
         logger.warning(f"AI generated price '{ai_price}' with no scraped price — discarding")
         ai_price = ""
 
+    # 规范化价格格式：确保始终带 $ 前缀
+    final_price = ai_price or scraped_price
+    if final_price and not final_price.startswith("$"):
+        try:
+            float(final_price)  # 验证是合法数字
+            final_price = f"${final_price}"
+        except (ValueError, TypeError):
+            pass  # 保留原样
+
     result = {
         # ── 兼容旧字段 ──
         "title": (ai_data.get("product_name") if ai_data else "") or retrieved.get("title", url),
         "description": (ai_data.get("product_description") if ai_data else "") or retrieved.get("description", ""),
-        "price": ai_price or scraped_price,
+        "price": final_price,
         "images": retrieved.get("images", []),
         "category_hints": (ai_data.get("category_tree") if ai_data else []) or retrieved.get("category", []),
         "url": url,
