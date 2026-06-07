@@ -425,7 +425,7 @@ Return this EXACT JSON structure (fill every field, use empty string/list if tru
   "product_name": "Clean, short product name (max 8 words, remove brand if redundant)",
   "brand": "Brand name",
   "category_tree": ["Level1", "Level2", "Level3"],
-  "price": "Price string (e.g. '$39.99') or empty string",
+  "price": "EXACT price from scraped data ONLY. If no price found, use empty string ''. NEVER invent or guess a price.",
   "key_features": ["Most important feature 1", "feature 2", "feature 3", "feature 4", "feature 5"],
   "target_audience": ["Specific group 1 (e.g. 'Office workers with chronic back pain')", "group 2", "group 3", "group 4"],
   "pain_points": ["Emotional frustration 1 (write as if you've experienced it)", "pain 2", "pain 3", "pain 4"],
@@ -573,11 +573,23 @@ def _assemble_result(url: str, retrieved: dict, ai_data: dict | None) -> dict:
             return [str(v).strip() for v in val if str(v).strip()]
         return default
 
+    # AI 编造的假价格检测：纯数字且不在抓取数据中出现过的，丢弃
+    ai_price = (ai_data.get("price") if ai_data else "").strip()
+    scraped_price = retrieved.get("price", "").strip()
+    # 如果 AI 给的价格不在抓取数据里出现过（哪怕部分匹配），大概率是编的
+    if ai_price and scraped_price and ai_price not in scraped_price and scraped_price not in ai_price:
+        logger.warning(f"AI price '{ai_price}' doesn't match scraped '{scraped_price}' — discarding AI price")
+        ai_price = ""
+    # 如果抓取数据本身就没价格，AI 给的价格也大概率是编的（除非抓取源有但格式奇怪）
+    if ai_price and not scraped_price:
+        logger.warning(f"AI generated price '{ai_price}' with no scraped price — discarding")
+        ai_price = ""
+
     result = {
         # ── 兼容旧字段 ──
         "title": (ai_data.get("product_name") if ai_data else "") or retrieved.get("title", url),
         "description": (ai_data.get("product_description") if ai_data else "") or retrieved.get("description", ""),
-        "price": (ai_data.get("price") if ai_data else "") or retrieved.get("price", ""),
+        "price": ai_price or scraped_price,
         "images": retrieved.get("images", []),
         "category_hints": (ai_data.get("category_tree") if ai_data else []) or retrieved.get("category", []),
         "url": url,
