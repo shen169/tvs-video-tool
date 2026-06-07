@@ -57,9 +57,12 @@ async def continue_pipeline(task_id: str, store: InMemoryTaskStore):
         platforms = [p.value for p in task.platforms]
         from .stage4_script import generate_all_scripts
         style = (task.selected_style.model_dump() if task.selected_style else {})
+        # 从 AI 推荐中提取视频类型，用于选择对应的叙事结构
+        video_type = (task.recommendation or {}).get("video_type", "")
         scripts = await generate_all_scripts(
             task.product_info, platforms,
             style,
+            video_type,
             task.creative_direction
         )
         store.update(task_id, scripts=scripts)
