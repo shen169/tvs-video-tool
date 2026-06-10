@@ -78,23 +78,29 @@ class UserRole(str, Enum):
     ADMIN = "admin"
 
 
+class TransactionType(str, Enum):
+    TOPUP = "topup"
+    CONSUME = "consume"
+    REFUND = "refund"
+
+
 class User(BaseModel):
     id: str
     email: str
     password_hash: str
     role: UserRole = UserRole.USER
     credits: int = 0
-    created_at: str = ""
+    created_at: Optional[str] = None
 
 
 class CreditTransaction(BaseModel):
     id: str
     user_id: str
     amount: int              # 正=充值, 负=消耗
-    type: str                # "topup" | "consume" | "refund"
+    type: TransactionType
     stripe_session_id: Optional[str] = None
     task_id: Optional[str] = None
-    created_at: str = ""
+    created_at: Optional[str] = None
 
 
 class PricingPlan(BaseModel):
