@@ -1,9 +1,11 @@
 "use client";
 import { usePathname } from "next/navigation";
+import UserStatus from "@/components/UserStatus";
 
 const NAV = [
   { href: "/", label: "New Video", icon: "M12 4.5v15m7.5-7.5h-15", active: true },
   { href: "/history", label: "History", icon: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" },
+  { href: "/credits", label: "Credits", icon: "M12 6v12m-3-2.818.879.659c1.171.879 3.07 1.979 4.242 1.979.208 0 .417-.012.624-.036M20.25 3.75l-7.5 7.5M3.75 20.25l7.5-7.5" },
 ];
 
 export default function Sidebar() {
@@ -47,6 +49,11 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* User Status */}
+      <div className="px-5 py-3">
+        <UserStatus />
+      </div>
 
       {/* Separator */}
       <div className="mx-4 h-px bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent" />
