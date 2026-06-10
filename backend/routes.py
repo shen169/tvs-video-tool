@@ -1,10 +1,21 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from .models import TaskState, TaskStage, Platform
 from .task_manager import InMemoryTaskStore
+from .auth import get_current_user
+from .models import User
+from .config import CREDITS_PER_PLATFORM
 import aiofiles, os
 
 router = APIRouter(prefix="/api")
 store: InMemoryTaskStore = None
+_user_store = None
+_credit_store = None
+
+
+def init_payment_stores(us, cs):
+    global _user_store, _credit_store
+    _user_store = us
+    _credit_store = cs
 
 
 def init_routes(s: InMemoryTaskStore):
@@ -13,9 +24,9 @@ def init_routes(s: InMemoryTaskStore):
 
 
 @router.post("/tasks")
-async def create_task(url: str = Form(...), platforms: str = Form("tiktok")):
+async def create_task(url: str = Form(...), platforms: str = Form("tiktok"), user: User = Depends(get_current_user)):
     platform_list = [Platform(p.strip()) for p in platforms.split(",") if p.strip()]
-    task = TaskState(task_id="", product_url=url, platforms=platform_list, stage=TaskStage.PENDING)
+    task = TaskState(task_id="", product_url=url, platforms=platform_list, stage=TaskStage.PENDING, user_id=user.id)
     task = store.create(task)
     import asyncio as _asyncio
     from .pipeline.runner import run_pipeline
@@ -24,10 +35,12 @@ async def create_task(url: str = Form(...), platforms: str = Form("tiktok")):
 
 
 @router.post("/tasks/{task_id}/ref-image")
-async def upload_ref_image(task_id: str, file: UploadFile = File(...)):
+async def upload_ref_image(task_id: str, file: UploadFile = File(...), user: User = Depends(get_current_user)):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     os.makedirs(f"output/{task_id}", exist_ok=True)
     # sanitize filename
     safe_name = file.filename.replace("/", "_").replace("\\", "_")
@@ -39,11 +52,13 @@ async def upload_ref_image(task_id: str, file: UploadFile = File(...)):
 
 
 @router.post("/tasks/{task_id}/regenerate-ref-image")
-async def regenerate_ref_image(task_id: str):
+async def regenerate_ref_image(task_id: str, user: User = Depends(get_current_user)):
     """重新生成参考图（清除旧的，重新调用 Seedream）。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     # 清除旧参考图，重新生成
     store.update(task_id, ref_image_url=None, uploaded_ref_image=None)
     from .pipeline.stage2_image import generate_ref_image as _gen_ref
@@ -62,18 +77,22 @@ async def regenerate_ref_image(task_id: str):
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str):
+async def get_task(task_id: str, user: User = Depends(get_current_user)):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     return task.model_dump()
 
 
 @router.post("/tasks/{task_id}/creative")
-async def select_creative(task_id: str, creative_data: dict):
+async def select_creative(task_id: str, creative_data: dict, user: User = Depends(get_current_user)):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.CREATIVE_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'creative_wait'")
     store.update(task_id, creative_direction=creative_data, stage=TaskStage.STYLE_WAIT)
@@ -82,11 +101,13 @@ async def select_creative(task_id: str, creative_data: dict):
 
 
 @router.post("/tasks/{task_id}/confirm-recommend")
-async def confirm_recommend(task_id: str, data: dict):
+async def confirm_recommend(task_id: str, data: dict, user: User = Depends(get_current_user)):
     """用户确认 AI 推荐（或手动调整后），触发脚本生成。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.RECOMMEND_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'recommend_wait'")
     creative = data.get("creative", {})
@@ -106,10 +127,12 @@ async def confirm_recommend(task_id: str, data: dict):
 
 
 @router.post("/tasks/{task_id}/style")
-async def select_style(task_id: str, style_data: dict):
+async def select_style(task_id: str, style_data: dict, user: User = Depends(get_current_user)):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.STYLE_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'style_wait'")
     from .pipeline.runner import continue_pipeline
@@ -125,19 +148,22 @@ async def select_style(task_id: str, style_data: dict):
 
 
 @router.get("/tasks")
-async def list_tasks():
-    """列出最近的任务（用于历史记录页）"""
+async def list_tasks(user: User = Depends(get_current_user)):
+    """列出当前用户最近的任务（用于历史记录页）"""
     tasks = store.list_all()
+    tasks = [t for t in tasks if t.user_id == user.id]
     tasks.sort(key=lambda t: t.task_id, reverse=True)
     return [{"task_id": t.task_id, "stage": t.stage.value, "product_info": t.product_info} for t in tasks[:50]]
 
 
 @router.put("/tasks/{task_id}/scripts")
-async def update_scripts(task_id: str, data: dict):
+async def update_scripts(task_id: str, data: dict, user: User = Depends(get_current_user)):
     """保存用户编辑后的分镜脚本。仅 script_review 阶段允许。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.SCRIPT_REVIEW:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'script_review'")
     scripts_data = data.get("scripts")
@@ -156,26 +182,55 @@ async def update_scripts(task_id: str, data: dict):
 
 
 @router.post("/tasks/{task_id}/confirm-scripts")
-async def confirm_scripts(task_id: str):
-    """确认脚本，触发视频生成。仅 script_review 阶段允许。"""
+async def confirm_scripts(task_id: str, user: User = Depends(get_current_user)):
+    """确认脚本，扣点并触发视频生成。仅 script_review 阶段允许。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.SCRIPT_REVIEW:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'script_review'")
+
+    # ── 扣点逻辑 ──
+    cost = len(task.platforms) * CREDITS_PER_PLATFORM
+
+    if _user_store is None or _credit_store is None:
+        raise HTTPException(500, detail="Payment system not initialized")
+
+    if task.credits_consumed == 0:
+        try:
+            _user_store.deduct(user.id, cost)
+        except ValueError:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "required": cost,
+                    "current": user.credits,
+                },
+            )
+        _credit_store.add(
+            user_id=user.id, amount=-cost, type_="consume", task_id=task_id,
+        )
+        user = _user_store.get(user.id)  # 刷新余额
+        store.update(task_id, credits_consumed=cost)
+
     store.update(task_id, stage=TaskStage.VIDEO_GEN)
     from .pipeline.runner import run_stage5_and_6
     import asyncio as _asyncio
     _asyncio.create_task(run_stage5_and_6(task_id, store))
-    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value}
+    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value, "credits_consumed": cost, "credits_remaining": user.credits}
 
 
 @router.post("/tasks/{task_id}/rollback")
-async def rollback_task(task_id: str, data: dict):
+async def rollback_task(task_id: str, data: dict, user: User = Depends(get_current_user)):
     """回退到之前的阶段，清除下游数据。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
 
     target_stage = data.get("stage")
     if not target_stage:
@@ -281,11 +336,13 @@ async def rollback_task(task_id: str, data: dict):
 
 
 @router.post("/tasks/{task_id}/regenerate-previews")
-async def regenerate_previews(task_id: str):
+async def regenerate_previews(task_id: str, user: User = Depends(get_current_user)):
     """手动重新生成预览图（不改变阶段，用于自愈）。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if not task.scripts:
         raise HTTPException(status_code=409, detail="Task has no scripts; generate scripts first")
     from .pipeline.stage5_preview import generate_preview_images
@@ -307,10 +364,12 @@ async def regenerate_previews(task_id: str):
 
 
 @router.post("/tasks/{task_id}/storyboard")
-async def confirm_storyboard(task_id: str, data: dict):
+async def confirm_storyboard(task_id: str, data: dict, user: User = Depends(get_current_user)):
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    if task.user_id and task.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.PREVIEW_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'preview_wait'")
     store.update(task_id, stage=TaskStage.VIDEO_GEN)
