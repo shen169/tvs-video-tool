@@ -66,3 +66,41 @@ class TaskState(BaseModel):
     preview_images: Optional[dict[str, list[str]]] = None
     video_urls: Optional[dict[str, str]] = None
     error: Optional[str] = None
+    user_id: Optional[str] = None
+    credits_consumed: int = 0
+
+# ═══════════════════════════════════════════════════════════════════════
+# 支付系统模型
+# ═══════════════════════════════════════════════════════════════════════
+
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
+class User(BaseModel):
+    id: str
+    email: str
+    password_hash: str
+    role: UserRole = UserRole.USER
+    credits: int = 0
+    created_at: str = ""
+
+
+class CreditTransaction(BaseModel):
+    id: str
+    user_id: str
+    amount: int              # 正=充值, 负=消耗
+    type: str                # "topup" | "consume" | "refund"
+    stripe_session_id: Optional[str] = None
+    task_id: Optional[str] = None
+    created_at: str = ""
+
+
+class PricingPlan(BaseModel):
+    id: str                  # "plan_9" | "plan_30" | "plan_90"
+    name: str
+    credits: int
+    price_cents: int
+    quality: str = "1080p"
+    is_active: bool = True
