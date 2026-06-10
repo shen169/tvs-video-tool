@@ -11,22 +11,24 @@ export function middleware(request: NextRequest) {
   // API routes bypass auth
   if (isApi) return NextResponse.next();
 
-  // 用 x-forwarded-host 避免 localhost 重定向
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:3000";
   const proto = request.headers.get("x-forwarded-proto") || "https";
   const base = `${proto}://${host}`;
 
-  // Not authed, redirect to login
-  if (!authed || authed !== ACCESS_PASSWORD) {
-    if (!isLoginPage) {
-      return NextResponse.redirect(new URL("/login", base), 303);
+  // JWT 登录的用户（前端 login/register 成功后设置此 cookie）
+  const jwtAuthed = request.cookies.get("tvs_authed")?.value === "1";
+
+  // 有密码 cookie 或 JWT 标记 → 通过
+  if ((authed && authed === ACCESS_PASSWORD) || jwtAuthed) {
+    if (isLoginPage) {
+      return NextResponse.redirect(new URL("/", base), 303);
     }
     return NextResponse.next();
   }
 
-  // Authed but on login page, redirect to home
-  if (isLoginPage) {
-    return NextResponse.redirect(new URL("/", base), 303);
+  // 未认证 → 跳登录
+  if (!isLoginPage) {
+    return NextResponse.redirect(new URL("/login", base), 303);
   }
 
   return NextResponse.next();
