@@ -5,20 +5,50 @@ export async function listTasks() {
   return request(`${BASE}/tasks`);
 }
 
+export class PaymentRequiredError extends Error {
+  constructor(
+    message: string,
+    public required: number,
+    public current: number,
+  ) {
+    super(message);
+    this.name = "PaymentRequiredError";
+  }
+}
+
 async function request(url: string, options?: RequestInit) {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   let res: Response;
   try {
-    res = await fetch(url, options);
+    res = await fetch(url, { ...options, headers });
   } catch (e: any) {
-    throw new Error(`网络请求失败: ${e.message || '请确认后端服务已启动 (localhost:8000)'}`);
+    throw new Error(`网络请求失败: ${e.message || '请确认后端服务已启动'}`);
   }
+
+  // 402 点数不足 — 抛特定错误
+  if (res.status === 402) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body.detail || {};
+    throw new PaymentRequiredError(
+      detail.error || "insufficient_credits",
+      detail.required || 0,
+      detail.current || 0,
+    );
+  }
+
   if (!res.ok) {
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `HTTP ${res.status}: 请求失败`);
+      throw new Error(body.detail || `HTTP ${res.status}`);
     }
-    // 非 JSON 响应（如代理错误页面）
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 200) || '后端服务不可用'}`);
   }
@@ -112,4 +142,104 @@ export async function confirmScripts(taskId: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Auth
+// ═══════════════════════════════════════════════════════════════════════
+
+const TOKEN_KEY = "tvs_token";
+
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function setToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export function getStoredToken(): string | null {
+  return getToken();
+}
+
+export async function register(email: string, password: string) {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Registration failed");
+  }
+  const data = await res.json();
+  setToken(data.token);
+  return data;
+}
+
+export async function login(email: string, password: string) {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Login failed");
+  }
+  const data = await res.json();
+  setToken(data.token);
+  return data;
+}
+
+export async function getMe() {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/me`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Not authenticated");
+  return res.json();
+}
+
+export function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  window.location.href = "/login";
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Credits
+// ═══════════════════════════════════════════════════════════════════════
+
+export async function getPricePlans() {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/prices`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch plans");
+  return res.json();
+}
+
+export async function createCheckout(planId: string) {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/checkout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Checkout failed");
+  }
+  return res.json();
+}
+
+export async function getCreditHistory() {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/history`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("Failed to fetch history");
+  return res.json();
 }
