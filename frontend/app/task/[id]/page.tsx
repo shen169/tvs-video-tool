@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend, updateScripts, confirmScripts } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend, updateScripts, confirmScripts, PaymentRequiredError } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
+import InsufficientModal from "@/components/InsufficientModal";
 
 export default function TaskPage() {
   const params = useParams();
@@ -11,6 +12,8 @@ export default function TaskPage() {
   const [task, setTask] = useState<any>(null);
   const [error, setError] = useState("");
   const [rollbackPending, setRollbackPending] = useState(false);
+  const [showCreditConfirm, setShowCreditConfirm] = useState(false);
+  const [insufficient, setInsufficient] = useState<{ required: number; current: number } | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
 
@@ -75,13 +78,22 @@ export default function TaskPage() {
     } catch (e: any) { setError(e?.message || String(e)); }
   };
   const handleConfirmScripts = async () => {
+    setShowCreditConfirm(true);
+  };
+
+  const doConfirmScripts = async () => {
+    setShowCreditConfirm(false);
     try {
-      await confirmScripts(taskId);
-      if (mounted.current) {
-        setTask((p: any) => ({ ...p, stage: "video_gen" }));
-        setTimeout(() => { if (mounted.current) poll(); }, 500);
+      const result = await confirmScripts(taskId);
+      setTask((p: any) => ({ ...p, stage: "video_gen", ...result }));
+      setTimeout(() => poll(), 1000);
+    } catch (e: any) {
+      if (e instanceof PaymentRequiredError) {
+        setInsufficient({ required: e.required, current: e.current });
+      } else {
+        setError(e.message);
       }
-    } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
+    }
   };
   const handleRollback = async (stageKey: string) => {
     try {
@@ -153,6 +165,44 @@ export default function TaskPage() {
         onConfirmRecommend={handleConfirmRecommend}
         onUpdateScripts={handleUpdateScripts}
         onConfirmScripts={handleConfirmScripts} />
+
+      {/* 扣点确认弹窗 */}
+      {showCreditConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm mx-4 p-6 rounded-2xl bg-[#121214] border border-[#27272c] shadow-2xl space-y-5">
+            <div className="text-center">
+              <div className="text-3xl mb-3">🎬</div>
+              <h3 className="text-lg font-bold text-zinc-100">确认生成视频？</h3>
+              <p className="text-sm text-zinc-400 mt-1">
+                本次生成 <span className="text-amber-400 font-semibold">{task.platforms?.length || 1} 个平台</span>，
+                消耗 <span className="text-amber-400 font-semibold">{(task.platforms?.length || 1) * 3} 点</span>
+              </p>
+              <p className="text-xs text-zinc-500 mt-2">
+                当前余额：{task.credits_remaining ?? "—"} 点
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowCreditConfirm(false)}
+                className="flex-1 h-11 rounded-xl bg-[#1c1c20] border border-[#27272c] text-zinc-400 text-sm font-medium">
+                取消
+              </button>
+              <button onClick={doConfirmScripts}
+                className="flex-1 h-11 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold text-sm shadow-lg shadow-amber-500/20">
+                确认生成 ✦
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 余额不足弹窗 */}
+      {insufficient && (
+        <InsufficientModal
+          required={insufficient.required}
+          current={insufficient.current}
+          onClose={() => setInsufficient(null)}
+        />
+      )}
     </div>
   );
 }
