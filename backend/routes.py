@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from .models import TaskState, TaskStage, Platform
 from .task_manager import InMemoryTaskStore
 from .auth import get_current_user
