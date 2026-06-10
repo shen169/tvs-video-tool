@@ -8,9 +8,11 @@ import StoryboardGallery from "./StoryboardGallery";
 import VideoResult from "./VideoResult";
 import { Icon, SvgIcon } from "./Icons";
 import { regenerateRefImage, uploadRefImage } from "@/lib/api";
+import ScriptEditor from "./ScriptEditor";
 
 export default function TaskStage({
   task, taskId, onSelectCreative, onSelectStyle, onConfirmStoryboard, onConfirmRecommend, onRefresh,
+  onUpdateScripts, onConfirmScripts,
 }: {
   task: any;
   taskId: string;
@@ -19,10 +21,15 @@ export default function TaskStage({
   onConfirmStoryboard: () => void;
   onConfirmRecommend: (creative: any, style: any) => void;
   onRefresh: () => void;
+  onUpdateScripts?: (scripts: Record<string, any[]>) => void;
+  onConfirmScripts?: () => void;
 }) {
   const { stage, product_info, ref_image_url, uploaded_ref_image,
     creative_directions, style_options, recommendation, scripts, preview_images, video_urls, error } = task;
   const [storyboardTab, setStoryboardTab] = useState(0);
+  const [editingScripts, setEditingScripts] = useState<Record<string, any[]>>({});
+  const [savingScripts, setSavingScripts] = useState(false);
+  const [editTab, setEditTab] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +189,75 @@ export default function TaskStage({
             </StageShell>
           </div>
         );
+
+      case "script_review": {
+        const platformKeys = Object.keys(scripts || {});
+        const activePlatform = platformKeys[editTab] || platformKeys[0];
+        const readScripts = scripts?.[activePlatform] || [];
+        const edited = editingScripts[activePlatform];
+        const displayScripts = edited || readScripts;
+
+        const handleShotChange = (i: number, updated: any) => {
+          const current = edited ? [...edited] : [...readScripts];
+          current[i] = updated;
+          setEditingScripts(prev => ({ ...prev, [activePlatform]: current }));
+        };
+
+        const handleSave = async () => {
+          if (!onUpdateScripts) return;
+          setSavingScripts(true);
+          const merged: Record<string, any[]> = {};
+          for (const plat of platformKeys) {
+            merged[plat] = editingScripts[plat] || scripts[plat];
+          }
+          await onUpdateScripts(merged);
+          setSavingScripts(false);
+          setEditingScripts({});
+        };
+
+        return (
+          <div className="space-y-6 animate-in animate-in-1">
+            {showProduct && <ProductAnalysis info={product_info} collapsed />}
+            <StageShell icon={Icon.doc} title="Review & Edit Script" subtitle={`${displayScripts.length} shots — edit scene, voiceover, subtitle, then confirm`}>
+              {/* Platform tabs */}
+              {platformKeys.length > 1 && (
+                <div className="flex gap-1.5 mb-4">
+                  {platformKeys.map((plat, i) => (
+                    <button key={plat} onClick={() => setEditTab(i)}
+                      className={`px-4 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer ${
+                        i === editTab
+                          ? "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                          : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                      }`}>
+                      {plat}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Editable shots */}
+              <div className="space-y-3 mb-5">
+                {displayScripts.map((shot: any, i: number) => (
+                  <ScriptEditor key={i} shot={shot} index={i}
+                    onChange={(updated: any) => handleShotChange(i, updated)} />
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button onClick={handleSave} disabled={savingScripts || !editingScripts[activePlatform]}
+                  className="flex-1 h-12 rounded-xl bg-zinc-800/80 border border-zinc-700/40 text-zinc-300 font-medium text-sm hover:bg-zinc-700/50 hover:text-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer">
+                  {savingScripts ? "Saving..." : Object.keys(editingScripts).length > 0 ? "💾 Save Changes" : "Saved ✓"}
+                </button>
+                <button onClick={() => { onConfirmScripts?.(); }}
+                  className="flex-1 h-12 rounded-xl bg-gradient-to-r from-violet-500 to-violet-600 hover:from-violet-400 hover:to-violet-500 text-white font-bold text-sm tracking-wide transition-all active:scale-[0.98] shadow-lg shadow-violet-500/20 cursor-pointer">
+                  ✦ Confirm & Generate Video
+                </button>
+              </div>
+            </StageShell>
+          </div>
+        );
+      }
 
       case "preview_wait": {
         if (!scripts) return (

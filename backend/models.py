@@ -11,7 +11,8 @@ class TaskStage(str, Enum):
     STYLE_WAIT = "style_wait"             # deprecated — replaced by RECOMMEND_WAIT
     RECOMMEND_WAIT = "recommend_wait"     # AI 智能推荐（8 维度一键确认）
     SCRIPT_GEN = "script_gen"
-    PREVIEW_WAIT = "preview_wait"
+    SCRIPT_REVIEW = "script_review"       # 脚本审核编辑（用户可修改每镜文案）
+    PREVIEW_WAIT = "preview_wait"         # deprecated — replaced by SCRIPT_REVIEW
     VIDEO_GEN = "video_gen"
     DONE = "done"
     FAILED = "failed"
@@ -30,6 +31,7 @@ class StyleChoice(BaseModel):
     lighting: str
     angle: str
     human: str
+    music: Optional[str] = None
 
 
 class ShotItem(BaseModel):

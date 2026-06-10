@@ -8,6 +8,15 @@ logger = logging.getLogger(__name__)
 SEEDANCE_API = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
 SEEDANCE_MODEL = "doubao-seedance-2-0-260128"
 
+# 音乐风格 → prompt 描述
+MUSIC_PROMPT_MAP = {
+    "fast_electronic": "背景音乐：快节奏电子乐，科技感强，节奏明快",
+    "soft_piano": "背景音乐：舒缓钢琴曲，情感氛围，柔和优雅",
+    "light_acoustic": "背景音乐：轻快原声吉他，生活感，温馨自然",
+    "dynamic_drums": "背景音乐：动感鼓点，节奏强烈，活力十足",
+    "no_music_asmr": "无背景音乐，仅保留产品环境音和ASMR细节声",
+}
+
 
 def _build_content(task: dict, platform: str) -> list[dict]:
     """构造 Seedance content 数组，包含 text + reference images。"""
@@ -15,9 +24,9 @@ def _build_content(task: dict, platform: str) -> list[dict]:
     style = task.get("selected_style", {})
     ref_image_url = task.get("ref_image_url", "")
 
-    # 合并所有分镜为一个连续 prompt
+    # 合并所有分镜为一个连续 prompt（含旁白，供 Seedance 生成匹配音频）
     shots_text = "；".join([
-        f"{s['duration']}秒：{s['scene']}。字幕：{s['subtitle']}"
+        f"{s['duration']}秒：{s['scene']}。旁白：{s['voiceover']}。字幕：{s['subtitle']}"
         for s in scripts
     ])
     style_prefix = (
@@ -26,7 +35,12 @@ def _build_content(task: dict, platform: str) -> list[dict]:
         f"{style.get('lighting', 'soft_studio')} lighting, "
         f"photorealistic quality."
     )
-    merged_prompt = f"全程{style_prefix}。{shots_text}"
+    # 音乐描述注入 prompt
+    music_key = style.get("music", "")
+    music_desc = MUSIC_PROMPT_MAP.get(music_key, "")
+    music_suffix = f"。{music_desc}" if music_desc else ""
+
+    merged_prompt = f"全程{style_prefix}。{shots_text}{music_suffix}"
 
     content = [{"type": "text", "text": merged_prompt}]
 
@@ -87,8 +101,14 @@ async def generate_video(task: dict, platform: str) -> str:
     total_duration = int(sum(s["duration"] for s in scripts))
     # Seedance duration range: 2-15 seconds
     total_duration = max(2, min(15, total_duration))
-    # 音频生成耗时长排队久，MVP 默认关。有需求时改 True
-    use_audio = os.getenv("SEEDANCE_AUDIO", "false").lower() == "true"
+    # 音频生成：根据音乐选择启用；SEEDANCE_AUDIO 环境变量可强制覆盖
+    music_key = task.get("selected_style", {}).get("music", "")
+    env_audio = os.getenv("SEEDANCE_AUDIO", "").lower()
+    if env_audio in ("true", "false"):
+        use_audio = env_audio == "true"
+    else:
+        use_audio = bool(music_key and music_key != "no_music_asmr")
+    logger.info(f"[{platform}] Audio {'ON' if use_audio else 'OFF'} (music={music_key or 'none'})")
     payload = {
         "model": SEEDANCE_MODEL,
         "content": content,

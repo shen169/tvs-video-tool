@@ -97,3 +97,19 @@ export async function regenerateRefImage(taskId: string) {
     body: JSON.stringify({}),
   });
 }
+
+export async function updateScripts(taskId: string, scripts: Record<string, any[]>) {
+  return request(`${BASE}/tasks/${taskId}/scripts`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scripts }),
+  });
+}
+
+export async function confirmScripts(taskId: string) {
+  return request(`${BASE}/tasks/${taskId}/confirm-scripts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}

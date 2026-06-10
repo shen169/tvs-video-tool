@@ -95,7 +95,7 @@ async def confirm_recommend(task_id: str, data: dict):
         raise HTTPException(status_code=422, detail="Missing 'creative' or 'style' field")
     from .models import StyleChoice
     try:
-        selected = StyleChoice(**{k: style.get(k, "") for k in ["visual_style", "camera", "lighting", "angle", "human"]})
+        selected = StyleChoice(**{k: style.get(k, "") for k in ["visual_style", "camera", "lighting", "angle", "human", "music"]})
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid style data")
     store.update(task_id, creative_direction=creative, selected_style=selected, stage=TaskStage.SCRIPT_GEN)
@@ -132,6 +132,44 @@ async def list_tasks():
     return [{"task_id": t.task_id, "stage": t.stage.value, "product_info": t.product_info} for t in tasks[:50]]
 
 
+@router.put("/tasks/{task_id}/scripts")
+async def update_scripts(task_id: str, data: dict):
+    """保存用户编辑后的分镜脚本。仅 script_review 阶段允许。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.SCRIPT_REVIEW:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'script_review'")
+    scripts_data = data.get("scripts")
+    if not scripts_data or not isinstance(scripts_data, dict):
+        raise HTTPException(status_code=422, detail="Missing 'scripts' dict")
+    # 校验每个 shot
+    from .models import ShotItem
+    try:
+        validated = {}
+        for plat, shots in scripts_data.items():
+            validated[plat] = [ShotItem(**s).model_dump() for s in shots]
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid shot data: {str(e)[:200]}")
+    store.update(task_id, scripts=validated)
+    return {"task_id": task_id, "message": "Scripts updated"}
+
+
+@router.post("/tasks/{task_id}/confirm-scripts")
+async def confirm_scripts(task_id: str):
+    """确认脚本，触发视频生成。仅 script_review 阶段允许。"""
+    task = store.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.stage != TaskStage.SCRIPT_REVIEW:
+        raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'script_review'")
+    store.update(task_id, stage=TaskStage.VIDEO_GEN)
+    from .pipeline.runner import run_stage5_and_6
+    import asyncio as _asyncio
+    _asyncio.create_task(run_stage5_and_6(task_id, store))
+    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value}
+
+
 @router.post("/tasks/{task_id}/rollback")
 async def rollback_task(task_id: str, data: dict):
     """回退到之前的阶段，清除下游数据。"""
@@ -158,6 +196,7 @@ async def rollback_task(task_id: str, data: dict):
         TaskStage.STYLE_WAIT,
         TaskStage.RECOMMEND_WAIT,
         TaskStage.SCRIPT_GEN,
+        TaskStage.SCRIPT_REVIEW,
         TaskStage.PREVIEW_WAIT,
         TaskStage.VIDEO_GEN,
         TaskStage.DONE,
@@ -182,6 +221,8 @@ async def rollback_task(task_id: str, data: dict):
         stage_idx[TaskStage.STYLE_WAIT]:   ["recommendation", "selected_style", "scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.RECOMMEND_WAIT]: ["recommendation", "creative_direction", "selected_style", "scripts", "preview_images", "video_urls"],
         stage_idx[TaskStage.SCRIPT_GEN]:   ["scripts", "preview_images", "video_urls"],
+        # 回退到 script_review 时保留 scripts（它们是这个阶段的展示数据）
+        stage_idx[TaskStage.SCRIPT_REVIEW]: ["video_urls"],
         # 回退到 preview_wait 时保留 preview_images（它们是这个阶段的展示数据）
         stage_idx[TaskStage.PREVIEW_WAIT]: ["video_urls"],
         stage_idx[TaskStage.VIDEO_GEN]:    ["video_urls"],

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
-import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend } from "@/lib/api";
+import { getTask, submitStyle, submitCreative, confirmStoryboard, rollbackTask, confirmRecommend, updateScripts, confirmScripts } from "@/lib/api";
 import PipelineProgress from "@/components/PipelineProgress";
 import TaskStage from "@/components/TaskStage";
 
@@ -22,7 +22,7 @@ export default function TaskPage() {
       const json = JSON.stringify(data);
       if (json !== lastJson.current) { lastJson.current = json; setTask(data); }
       if (data.stage === "done" || data.stage === "failed") return;
-      if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait"].includes(data.stage)) {
+      if (!["style_wait", "creative_wait", "preview_wait", "recommend_wait", "script_review"].includes(data.stage)) {
         const interval = data.stage === "video_gen" ? 5000 : 2000;
         pollTimer.current = setTimeout(() => poll(), interval);
       }
@@ -64,6 +64,21 @@ export default function TaskPage() {
       await confirmRecommend(taskId, creative, style);
       if (mounted.current) {
         setTask((p: any) => ({ ...p, stage: "script_gen" }));
+        setTimeout(() => { if (mounted.current) poll(); }, 500);
+      }
+    } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
+  };
+  const handleUpdateScripts = async (scripts: Record<string, any[]>) => {
+    try {
+      await updateScripts(taskId, scripts);
+      setTask((p: any) => ({ ...p, scripts }));
+    } catch (e: any) { setError(e?.message || String(e)); }
+  };
+  const handleConfirmScripts = async () => {
+    try {
+      await confirmScripts(taskId);
+      if (mounted.current) {
+        setTask((p: any) => ({ ...p, stage: "video_gen" }));
         setTimeout(() => { if (mounted.current) poll(); }, 500);
       }
     } catch (e: any) { if (mounted.current) setError(e?.message || String(e)); }
@@ -135,7 +150,9 @@ export default function TaskPage() {
         onSelectCreative={handleSelectCreative}
         onSelectStyle={handleSelectStyle}
         onConfirmStoryboard={handleConfirmStoryboard}
-        onConfirmRecommend={handleConfirmRecommend} />
+        onConfirmRecommend={handleConfirmRecommend}
+        onUpdateScripts={handleUpdateScripts}
+        onConfirmScripts={handleConfirmScripts} />
     </div>
   );
 }
