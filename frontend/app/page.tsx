@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createTask } from "@/lib/api";
+import { createTask, getStoredToken } from "@/lib/api";
 
 const PLATFORMS = [
   { key: "tiktok", label: "TikTok", desc: "9:16 · Fast-paced", color: "from-pink-500/10 to-rose-500/5 border-pink-500/15 hover:border-pink-500/30" },
@@ -17,6 +17,15 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+
+  useEffect(() => {
+    const token = getStoredToken();
+    if (!token && !document.cookie.includes("tvs_auth=")) {
+      console.log(
+        "Tip: register an account to save your credits and video history.",
+      );
+    }
+  }, []);
 
   const togglePlatform = (key: string) => {
     setPlatforms((prev) =>
