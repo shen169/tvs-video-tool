@@ -174,7 +174,7 @@ export function getStoredToken(): string | null {
 }
 
 export async function register(email: string, password: string) {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/register`, {
+  const res = await fetch(`${BASE}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -189,7 +189,7 @@ export async function register(email: string, password: string) {
 }
 
 export async function login(email: string, password: string) {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/login`, {
+  const res = await fetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -204,7 +204,7 @@ export async function login(email: string, password: string) {
 }
 
 export async function passwordLogin(password: string) {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/password-login`, {
+  const res = await fetch(`${BASE}/auth/password-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "admin@tvs.internal", password }),
@@ -219,7 +219,7 @@ export async function passwordLogin(password: string) {
 }
 
 export async function getMe() {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/me`, {
+  const res = await fetch(`${BASE}/auth/me`, {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error("Not authenticated");
@@ -236,7 +236,7 @@ export function logout() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export async function getPricePlans() {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/prices`, {
+  const res = await fetch(`${BASE}/credits/prices`, {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error("Failed to fetch plans");
@@ -244,7 +244,7 @@ export async function getPricePlans() {
 }
 
 export async function createCheckout(planId: string) {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/checkout`, {
+  const res = await fetch(`${BASE}/credits/checkout`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ plan_id: planId }),
@@ -257,7 +257,7 @@ export async function createCheckout(planId: string) {
 }
 
 export async function getCreditHistory() {
-  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/credits/history`, {
+  const res = await fetch(`${BASE}/credits/history`, {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error("Failed to fetch history");
