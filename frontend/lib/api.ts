@@ -47,7 +47,12 @@ async function request(url: string, options?: RequestInit) {
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `HTTP ${res.status}`);
+      const detail = body.detail;
+      // FastAPI 422 返回数组 detail → 提取第一条 msg 或用 status 文本
+      const msg = typeof detail === "string" ? detail
+        : Array.isArray(detail) ? detail.map((d: any) => d.msg || JSON.stringify(d)).join("; ")
+        : (detail ? JSON.stringify(detail) : `HTTP ${res.status}`);
+      throw new Error(msg);
     }
     const text = await res.text().catch(() => "");
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 200) || '后端服务不可用'}`);
@@ -192,6 +197,21 @@ export async function login(email: string, password: string) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Login failed");
+  }
+  const data = await res.json();
+  setToken(data.token);
+  return data;
+}
+
+export async function passwordLogin(password: string) {
+  const res = await fetch(`${BASE.replace("/api/backend", "")}/api/auth/password-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "admin@tvs.internal", password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Password login failed");
   }
   const data = await res.json();
   setToken(data.token);

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { login, register } from "@/lib/api";
+import { login, register, passwordLogin } from "@/lib/api";
 
 type Mode = "password" | "email_login" | "email_register";
 
@@ -14,14 +14,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // 简单密码登录（保留）
+  // 简单密码登录 — cookie + JWT 双写
   const handlePassword = async () => {
     if (!password) return;
     setLoading(true); setError("");
     try {
+      // 1. 先设 cookie（通过 Next.js API route）
       const res = await fetch("/api/auth", { method: "POST", body: new URLSearchParams({ password }) });
-      if (res.redirected) { router.push("/"); return; }
-      if (!res.ok) throw new Error("Wrong password");
+      if (!res.redirected && !res.ok) throw new Error("Wrong password");
+
+      // 2. 再从后端拿 JWT token（密码用户共享 admin 账户）
+      try {
+        await passwordLogin(password);
+        // 设置 cookie 标记让 middleware 也认 JWT 路径
+        document.cookie = "tvs_authed=1; path=/; max-age=2592000; SameSite=Lax";
+      } catch {
+        // JWT 获取失败不影响密码登录（降级兼容）
+        console.warn("JWT token fetch failed, using cookie-only auth");
+      }
+
       router.push("/");
     } catch (e: any) { setError(e.message); }
     setLoading(false);

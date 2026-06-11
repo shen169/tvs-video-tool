@@ -30,6 +30,15 @@ store = FileTaskStore()
 user_store = UserStore()
 credit_store = CreditStore()
 
+# 自动创建 admin 用户（用于密码登录）
+ADMIN_EMAIL = "admin@tvs.internal"
+ADMIN_PASSWORD = os.getenv("ACCESS_PASSWORD", "tvs2024")
+if not user_store.get_by_email(ADMIN_EMAIL):
+    user_store.create(ADMIN_EMAIL, ADMIN_PASSWORD)
+    # 赠 999 点给 admin（密码用户共享此账户）
+    admin = user_store.get_by_email(ADMIN_EMAIL)
+    user_store.add_credits(admin.id, 999)
+
 # 注入 auth / webhook / routes
 init_auth(user_store)
 init_webhook(user_store, credit_store)
@@ -72,6 +81,19 @@ async def login(body: _LoginBody):
     user = user_store.verify_password(body.email, body.password)
     if not user:
         raise _HTTPException(401, detail="Invalid email or password")
+    token = create_token(user)
+    return {"token": token, "user": {"id": user.id, "email": user.email, "credits": user.credits}}
+
+
+@auth_router.post("/password-login")
+async def password_login(body: _LoginBody):
+    """密码登录 — 用 ACCESS_PASSWORD 验证，返回 admin 用户 JWT。"""
+    access_pwd = os.getenv("ACCESS_PASSWORD", "tvs2024")
+    if body.password != access_pwd:
+        raise _HTTPException(401, detail="Invalid password")
+    user = user_store.get_by_email(ADMIN_EMAIL)
+    if not user:
+        raise _HTTPException(500, detail="Admin user not found")
     token = create_token(user)
     return {"token": token, "user": {"id": user.id, "email": user.email, "credits": user.credits}}
 
