@@ -1,5 +1,7 @@
 "use client";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getMe, getStoredToken } from "@/lib/api";
 import UserStatus from "@/components/UserStatus";
 
 const NAV = [
@@ -8,8 +10,16 @@ const NAV = [
   { href: "/credits", label: "Credits", icon: "M12 6v12m-3-2.818.879.659c1.171.879 3.07 1.979 4.242 1.979.208 0 .417-.012.624-.036M20.25 3.75l-7.5 7.5M3.75 20.25l7.5-7.5" },
 ];
 
+const ADMIN_NAV = { href: "/admin", label: "Admin", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" };
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!getStoredToken()) return;
+    getMe().then(u => setIsAdmin(u.role === "admin")).catch(() => {});
+  }, []);
 
   return (
     <aside className="w-60 h-screen glass flex flex-col flex-shrink-0 select-none">
@@ -48,6 +58,23 @@ export default function Sidebar() {
             </a>
           );
         })}
+
+        {/* Admin link — only for admin users */}
+        {isAdmin && (
+          <a
+            href={ADMIN_NAV.href}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+              pathname.startsWith("/admin")
+                ? "bg-purple-500/10 text-purple-400 border border-purple-500/15 shadow-sm shadow-purple-500/5"
+                : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent"
+            }`}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d={ADMIN_NAV.icon} />
+            </svg>
+            <span>Admin</span>
+          </a>
+        )}
       </nav>
 
       {/* User Status */}

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .task_manager import FileTaskStore
 from .user_store import UserStore
 from .credit_store import CreditStore
+from .models import UserRole
 from .auth import init_auth
 from .stripe_webhook import init_webhook
 
@@ -35,8 +36,9 @@ ADMIN_EMAIL = "admin@tvs.internal"
 ADMIN_PASSWORD = os.getenv("ACCESS_PASSWORD", "tvs2024")
 if not user_store.get_by_email(ADMIN_EMAIL):
     user_store.create(ADMIN_EMAIL, ADMIN_PASSWORD)
-    # 赠 999 点给 admin（密码用户共享此账户）
     admin = user_store.get_by_email(ADMIN_EMAIL)
+    # 设为 ADMIN 角色 + 赠 999 点
+    admin.role = UserRole.ADMIN
     user_store.add_credits(admin.id, 999)
 
 # 注入 auth / webhook / routes
@@ -100,7 +102,7 @@ async def password_login(body: _LoginBody):
 
 @auth_router.get("/me")
 async def me(user=_Depends(get_current_user)):
-    return {"id": user.id, "email": user.email, "credits": user.credits}
+    return {"id": user.id, "email": user.email, "credits": user.credits, "role": user.role.value}
 
 
 app.include_router(auth_router)
@@ -122,6 +124,83 @@ async def credit_history(user=_Depends(get_current_user)):
 
 
 app.include_router(credits_router)
+
+# ── 管理后台 ──
+admin_router = _APIRouter(prefix="/api/admin")
+
+
+async def _require_admin(user=_Depends(get_current_user)):
+    if user.role != UserRole.ADMIN:
+        raise _HTTPException(403, detail="Admin only")
+    return user
+
+
+from datetime import datetime, timezone
+
+
+@admin_router.get("/stats")
+async def admin_stats(_admin=_Depends(_require_admin)):
+    """概览统计。"""
+    all_users = list(user_store._users.values())
+    all_txs = list(credit_store._transactions.values())
+
+    total_topup = sum(tx.amount for tx in all_txs if tx.type in ("topup",))
+    total_consumed = sum(abs(tx.amount) for tx in all_txs if tx.type == "consume")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_txs = [tx for tx in all_txs if tx.created_at.startswith(today)]
+
+    return {
+        "total_users": len(all_users),
+        "total_credits_sold": total_topup,
+        "total_credits_consumed": total_consumed,
+        "today_transactions": len(today_txs),
+        "today_revenue": sum(tx.amount for tx in today_txs if tx.type == "topup"),
+    }
+
+
+@admin_router.get("/users")
+async def admin_users(_admin=_Depends(_require_admin)):
+    """所有用户列表。"""
+    users = list(user_store._users.values())
+    users.sort(key=lambda u: u.created_at, reverse=True)
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "role": u.role.value,
+            "credits": u.credits,
+            "created_at": u.created_at,
+        }
+        for u in users
+    ]
+
+
+@admin_router.get("/transactions")
+async def admin_transactions(limit: int = 100, _admin=_Depends(_require_admin)):
+    """所有流水记录。"""
+    txs = sorted(
+        credit_store._transactions.values(),
+        key=lambda tx: tx.created_at,
+        reverse=True,
+    )
+    return [tx.model_dump() for tx in txs[:limit]]
+
+
+@admin_router.post("/users/{user_id}/add-credits")
+async def admin_add_credits(user_id: str, body: dict, _admin=_Depends(_require_admin)):
+    """手动充值。"""
+    amount = body.get("amount", 0)
+    if amount <= 0:
+        raise _HTTPException(400, detail="amount must be positive")
+    user = user_store.get(user_id)
+    if not user:
+        raise _HTTPException(404, detail="User not found")
+    user_store.add_credits(user_id, amount)
+    credit_store.add(user_id=user_id, amount=amount, type_="topup")
+    return {"status": "ok", "credits": user.credits + amount}
+
+
+app.include_router(admin_router)
 
 
 @app.get("/api/health")
