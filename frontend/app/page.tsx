@@ -37,6 +37,12 @@ export default function LandingPage() {
           >
             立即开始 ✦
           </Link>
+          <Link
+            href="/features"
+            className="px-6 py-3 rounded-2xl border border-[#27272c] bg-[#121214] text-zinc-400 hover:text-zinc-200 text-sm transition-all"
+          >
+            了解更多 ↓
+          </Link>
         </div>
       </header>
 

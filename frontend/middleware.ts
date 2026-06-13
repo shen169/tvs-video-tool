@@ -11,6 +11,7 @@ export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isHomePage = pathname === "/";
   const isLoginPage = pathname === "/login";
+  const isPublicPage = pathname === "/features" || isHomePage || isLoginPage;
   const isApi = pathname.startsWith("/api");
 
   // API routes bypass
@@ -20,18 +21,10 @@ export function middleware(request: NextRequest) {
   const proto = request.headers.get("x-forwarded-proto") || "https";
   const base = `${proto}://${host}`;
 
-  // Landing page — public, no auth required
-  if (isHomePage) {
-    // Logged-in users → redirect to app
-    if (isLoggedIn) {
-      return NextResponse.redirect(new URL("/app", base), 303);
-    }
-    return NextResponse.next();
-  }
-
-  // Login page — public
-  if (isLoginPage) {
-    if (isLoggedIn) {
+  // Public pages — no auth required (landing, login, features)
+  if (isPublicPage) {
+    // Logged-in users → redirect to app (except on /features — stay there)
+    if (isLoggedIn && !(pathname === "/features")) {
       return NextResponse.redirect(new URL("/app", base), 303);
     }
     return NextResponse.next();
