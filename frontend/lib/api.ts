@@ -18,16 +18,18 @@ export class PaymentRequiredError extends Error {
 
 async function request(url: string, options?: RequestInit) {
   const token = getToken();
-  const headers: Record<string, string> = {
-    ...(options?.headers as Record<string, string> || {}),
-  };
+  const fetchOptions: RequestInit = { ...options };
+
+  // 只在有 token 时才注入 Authorization，避免空 headers 对象干扰 FormData 传输
   if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+    const merged = new Headers(options?.headers);
+    merged.set("Authorization", `Bearer ${token}`);
+    fetchOptions.headers = merged;
   }
 
   let res: Response;
   try {
-    res = await fetch(url, { ...options, headers });
+    res = await fetch(url, fetchOptions);
   } catch (e: any) {
     throw new Error(`网络请求失败: ${e.message || '请确认后端服务已启动'}`);
   }
@@ -61,10 +63,14 @@ async function request(url: string, options?: RequestInit) {
 }
 
 export async function createTask(url: string, platforms: string[], image?: File) {
-  const form = new FormData();
-  form.append("url", url);
-  form.append("platforms", platforms.join(","));
-  const data = await request(`${BASE}/tasks`, { method: "POST", body: form });
+  const params = new URLSearchParams();
+  params.append("url", url.trim());
+  params.append("platforms", platforms.join(","));
+  const data = await request(`${BASE}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
 
   // 如果有参考图，任务创建后再上传
   if (image && data.task_id) {
