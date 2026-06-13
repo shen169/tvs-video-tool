@@ -1,5 +1,7 @@
-// 通过 Next.js rewrites 代理到后端，规避跨域和环境变量问题
-const BASE = "/api/backend";
+// 直接调后端（绕过 Next.js rewrite，避免 POST body 被代理损耗）
+// 后端 CORS 已开 allow_origins=["*"] + allow_headers=["*"]
+const BASE =
+  (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/api\/?$/, "") + "/api";
 
 export async function listTasks() {
   return request(`${BASE}/tasks`);
