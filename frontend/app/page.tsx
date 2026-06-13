@@ -76,6 +76,14 @@ export default function LandingPage() {
       {/* Footer */}
       {/* ═══════════════════════════════════════════════════════════ */}
       <footer className="text-center pt-12 mt-16 border-t border-[#1c1c20]">
+        <div className="flex items-center justify-center gap-6 mb-4">
+          <Link href="/features" className="text-xs text-zinc-500 hover:text-amber-400 transition-colors">
+            How It Works
+          </Link>
+          <Link href="/login" className="text-xs text-zinc-500 hover:text-amber-400 transition-colors">
+            Get Started
+          </Link>
+        </div>
         <p className="text-xs text-zinc-600">
           Powered by Seedance 2.0 · Seedream 5.0 · DeepSeek · Volcano Engine Ark
         </p>
