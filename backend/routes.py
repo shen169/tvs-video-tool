@@ -23,8 +23,27 @@ def init_routes(s: InMemoryTaskStore):
     store = s
 
 
+PRODUCT_URL_PATTERNS = [
+    r"amazon\.",
+    r"shopify\.com\/.*products\/",
+    r"myshopify\.com",
+    r"etsy\.com\/.*\d",
+    r"ebay\.com\/itm\/",
+    r"walmart\.com\/ip\/",
+    r"aliexpress\.com\/item\/",
+    r"alibaba\.com\/product-detail\/",
+    r"target\.com\/p\/",
+    r"bestbuy\.com\/site\/",
+    r"\.com\/.*(?:product|item|dp|gp)\/.*[A-Za-z0-9]",
+]
+
+import re as _re
+
 @router.post("/tasks")
 async def create_task(url: str = Form(...), platforms: str = Form("tiktok"), user: User = Depends(get_current_user)):
+    if not any(_re.search(p, url) for p in PRODUCT_URL_PATTERNS):
+        raise HTTPException(status_code=422, detail="This doesn't look like a product link. Please paste an Amazon / Shopify / eBay / Walmart / Etsy product page URL.")
+
     platform_list = [Platform(p.strip()) for p in platforms.split(",") if p.strip()]
     task = TaskState(task_id="", product_url=url, platforms=platform_list, stage=TaskStage.PENDING, user_id=user.id)
     task = store.create(task)

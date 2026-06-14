@@ -31,10 +31,29 @@ export default function HomePage() {
     );
   };
 
+  const isValidProductUrl = (u: string) => {
+    // 支持 Amazon / Shopify / 常见电商平台产品链接
+    const patterns = [
+      /amazon\./,           // Amazon 全域名 (.com/.co.uk/.co.jp/.de 等)
+      /shopify\.com\/.*products\//,  // Shopify 产品页
+      /myshopify\.com/,    // Shopify 商家子域名
+      /etsy\.com\/.*\d/,   // Etsy 产品
+      /ebay\.com\/itm\//,  // eBay 产品
+      /walmart\.com\/ip\//,// Walmart 产品
+      /aliexpress\.com\/item\//, // AliExpress
+      /alibaba\.com\/product-detail\//, // Alibaba
+      /target\.com\/p\//,  // Target
+      /bestbuy\.com\/site\//, // Best Buy
+      /\.com\/.*(?:product|item|dp|gp)\/.*[A-Za-z0-9]/, // 通用产品路径
+    ];
+    return patterns.some(p => p.test(u));
+  };
+
   const handleSubmit = async () => {
     const trimmed = url.trim();
     if (!trimmed) { setError("Please enter a product link"); return; }
     if (!/^https?:\/\/.+/i.test(trimmed)) { setError("Please enter a valid URL starting with http:// or https://"); return; }
+    if (!isValidProductUrl(trimmed)) { setError("This doesn't look like a product link. Please paste an Amazon / Shopify / eBay / Walmart / Etsy product page URL."); return; }
     if (platforms.length === 0) { setError("Select at least one platform"); return; }
     setLoading(true); setError("");
     try {
