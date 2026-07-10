@@ -34,12 +34,22 @@ credit_store = CreditStore()
 # 自动创建 admin 用户（用于密码登录）
 ADMIN_EMAIL = "admin@tvs.internal"
 ADMIN_PASSWORD = os.getenv("ACCESS_PASSWORD", "tvs2024")
-if not user_store.get_by_email(ADMIN_EMAIL):
+admin = user_store.get_by_email(ADMIN_EMAIL)
+if admin:
+    # admin 已存在：确保角色正确 + 兜底补点（防止初始化中断导致 0 点）
+    if admin.role != UserRole.ADMIN:
+        admin.role = UserRole.ADMIN
+        user_store._save(admin.id)
+    if admin.credits < 100:
+        user_store.add_credits(admin.id, 999)
+        credit_store.add(user_id=admin.id, amount=999, type_="topup")
+else:
     user_store.create(ADMIN_EMAIL, ADMIN_PASSWORD)
     admin = user_store.get_by_email(ADMIN_EMAIL)
-    # 设为 ADMIN 角色 + 赠 999 点
+    # 设为 ADMIN 角色 + 赠 999 点（原子操作：create 后立刻 add，减少中断窗口）
     admin.role = UserRole.ADMIN
     user_store.add_credits(admin.id, 999)
+    credit_store.add(user_id=admin.id, amount=999, type_="topup")
 
 # 注入 auth / webhook / routes
 init_auth(user_store)
@@ -197,7 +207,8 @@ async def admin_add_credits(user_id: str, body: dict, _admin=_Depends(_require_a
         raise _HTTPException(404, detail="User not found")
     user_store.add_credits(user_id, amount)
     credit_store.add(user_id=user_id, amount=amount, type_="topup")
-    return {"status": "ok", "credits": user.credits + amount}
+    # add_credits modifies user.credits in-place, so user.credits already reflects new balance
+    return {"status": "ok", "credits": user.credits}
 
 
 app.include_router(admin_router)

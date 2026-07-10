@@ -52,14 +52,20 @@ async def stripe_webhook(request: Request):
 
     credits = int(credits_str)
 
-    if _credit_store.is_stripe_duplicate(session_id):
-        logger.info(f"Duplicate webhook ignored: {session_id}")
-        return {"status": "duplicate", "session_id": session_id}
-
+    # 原子 check-and-add：拿锁后重新检查去重，防止竞态双充
+    # 注意：_credit_store.add() 内部有锁，但 is_stripe_duplicate() 无锁
+    # 解决方案：先 add（内部锁 + 写入 _seen_stripe），再读回确认
+    # 但 add 在重复时不会阻塞——改用 credit_store 的锁显式保护
     user = _user_store.get(user_id)
     if not user:
         logger.error(f"Webhook user not found: {user_id}")
         return {"status": "error", "detail": "user not found"}
+
+    with _credit_store._lock:
+        if session_id in _credit_store._seen_stripe:
+            logger.info(f"Duplicate webhook ignored: {session_id}")
+            return {"status": "duplicate", "session_id": session_id}
+        _credit_store._seen_stripe.add(session_id)
 
     _user_store.add_credits(user_id, credits)
     _credit_store.add(

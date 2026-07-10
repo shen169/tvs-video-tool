@@ -232,14 +232,16 @@ async def confirm_scripts(task_id: str, user: User = Depends(get_current_user)):
         _credit_store.add(
             user_id=user.id, amount=-cost, type_="consume", task_id=task_id,
         )
-        user = _user_store.get(user.id)  # 刷新余额
+        # 标记已扣点（deduct 内部有锁保证原子性，极端并发会抛 402 不会双扣）
         store.update(task_id, credits_consumed=cost)
 
+    # 重新获取最新余额
+    current_user = _user_store.get(user.id)
     store.update(task_id, stage=TaskStage.VIDEO_GEN)
     from .pipeline.runner import run_stage5_and_6
     import asyncio as _asyncio
     _asyncio.create_task(run_stage5_and_6(task_id, store))
-    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value, "credits_consumed": cost, "credits_remaining": user.credits}
+    return {"task_id": task_id, "stage": TaskStage.VIDEO_GEN.value, "credits_consumed": cost, "credits_remaining": current_user.credits}
 
 
 @router.post("/tasks/{task_id}/rollback")
@@ -384,6 +386,8 @@ async def regenerate_previews(task_id: str, user: User = Depends(get_current_use
 
 @router.post("/tasks/{task_id}/storyboard")
 async def confirm_storyboard(task_id: str, data: dict, user: User = Depends(get_current_user)):
+    """[DEPRECATED] 旧预览确认端点 — PREVIEW_WAIT 阶段已被 SCRIPT_REVIEW 替代。
+    保留此端点仅为兼容，但会走完整扣点逻辑。"""
     task = store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
@@ -391,6 +395,29 @@ async def confirm_storyboard(task_id: str, data: dict, user: User = Depends(get_
         raise HTTPException(status_code=403, detail="not your task")
     if task.stage != TaskStage.PREVIEW_WAIT:
         raise HTTPException(status_code=409, detail=f"Task is in stage '{task.stage.value}', expected 'preview_wait'")
+
+    # 扣点（与 confirm-scripts 一致，旧端点也需扣费）
+    cost = len(task.platforms) * CREDITS_PER_PLATFORM
+    if _user_store is None or _credit_store is None:
+        raise HTTPException(500, detail="Payment system not initialized")
+    if task.credits_consumed == 0:
+        try:
+            _user_store.deduct(user.id, cost)
+        except ValueError:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "required": cost,
+                    "current": user.credits,
+                },
+            )
+        _credit_store.add(
+            user_id=user.id, amount=-cost, type_="consume", task_id=task_id,
+        )
+        _user_store.get(user.id)  # 刷新余额缓存
+        store.update(task_id, credits_consumed=cost)
+
     store.update(task_id, stage=TaskStage.VIDEO_GEN)
     from .pipeline.runner import run_stage5_and_6
     import asyncio as _asyncio

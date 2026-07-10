@@ -208,10 +208,11 @@ def _template_prompt(shot: dict, style: dict, continuity: str, product_info: dic
 # ═══════════════════════════════════════════════════════════════════════════
 
 async def _generate_preview_image(prompt: str, ref_image_url: str = None) -> str:
-    """调用 Seedream 生成单张 9:16 预览图，可选参考图做图生图。"""
+    """调用 Seedream 生成单张 9:16 预览图，可选参考图做图生图。
+    无 API key 时返回占位标记（而非原始 prompt 文本），前端可据此显示 fallback UI。"""
     api_key = os.getenv("SEEDANCE_API_KEY", "")
     if not api_key:
-        return prompt
+        return f"__NO_API_KEY__:{prompt[:100]}"
 
     async with _seedream_sema:
         try:
@@ -245,10 +246,10 @@ async def _generate_preview_image(prompt: str, ref_image_url: str = None) -> str
                 if images and images[0].get("url"):
                     return images[0]["url"]
 
-                return prompt
+                return f"__API_ERROR__:no_image_url:{prompt[:80]}"
         except Exception as e:
             logger.warning(f"Seedream preview error: {e}")
-            return prompt
+            return f"__API_ERROR__:{str(e)[:100]}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
